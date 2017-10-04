@@ -162,7 +162,7 @@ def add_stop_areas(src):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Read a JSON from Overpass and output JOSM OSM XML with added stop_area relations')
-        print('Usage: {} {<export.json>|<bbox>} [output.osm]'.format(sys.argv[0]))
+        print('Usage: {} {{<export.json>|<bbox>}} [output.osm]'.format(sys.argv[0]))
         sys.exit(1)
 
     if re.match(r'', sys.argv[1]):

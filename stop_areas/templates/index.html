@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,height=device-height, user-scalable=no" />
+    <title>Make Stop Areas</title><!-- ...Great Again -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.2.0/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.2.0/dist/leaflet.js"></script>
+    <script src="https://npmcdn.com/leaflet.path.drag@0.0.6/src/Path.Drag.js"></script>
+    <script src="https://unpkg.com/leaflet-editable@1.1.0/src/Leaflet.Editable.js"></script>
+    <style type='text/css'>
+      html, body, #map { margin: 0; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div id='map'></div>
+    <script type="text/javascript">
+      var map = L.map('map', {editable: true}).setView([22, 10], 3);
+      var box = null;
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        minZoom: 3, maxZoom: 16,
+        attribution: 'Map &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap Contributors</a>'
+      }).addTo(map);
+
+      L.NewRectangleControl = L.Control.extend({
+        onAdd: function (map) {
+            var container = L.DomUtil.create('div', 'leaflet-control leaflet-bar'),
+                link = L.DomUtil.create('a', '', container);
+
+            link.href = '#';
+            link.innerHTML = 'Draw a box around a city';
+            link.style.width = 'auto';
+            link.style.padding = '0 4px';
+            L.DomEvent.on(link, 'click', L.DomEvent.stop)
+                      .on(link, 'click', function () { map.editTools.startRectangle(); });
+
+            return container;
+        }
+      });
+
+      L.GetXMLControl = L.Control.extend({
+        onAdd: function (map) {
+            var container = L.DomUtil.create('div', 'leaflet-control leaflet-bar'),
+                link = L.DomUtil.create('a', '', container);
+
+            link.href = '#';
+            link.innerHTML = 'Download JOSM XML';
+            link.style.width = 'auto';
+            link.style.padding = '0 4px';
+            L.DomEvent.on(link, 'click', L.DomEvent.stop)
+                      .on(link, 'click', function () {
+                        if (!box) return;
+                        bbox = box.getBounds().toBBoxString();
+                        window.open('{{ url_for('convert') }}?bbox='+bbox, 'stop_area');
+                      });
+
+            return container;
+        }
+      });
+
+      map.addControl(new L.NewRectangleControl({ position: 'topleft' }));
+      map.addControl(new L.GetXMLControl({ position: 'topleft' }));
+
+      map.on('editable:drawing:start', function() { if (box) map.removeLayer(box); });
+      map.on('editable:drawing:end', function(obj) { box = obj.layer; box.enableEdit(); });
+    </script>
+  </body>
+</html>

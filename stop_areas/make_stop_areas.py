@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import codecs
 from lxml import etree
 import sys
 import kdtree
@@ -36,7 +37,12 @@ def el_id(el):
 
 class StationWrapper:
     def __init__(self, st):
-        self.coords = (st['lon'], st['lat'])
+        if 'center' in st:
+            self.coords = (st['center']['lon'], st['center']['lat'])
+        elif 'lon' in st:
+            self.coords = (st['lon'], st['lat'])
+        else:
+            raise Exception('Coordinates not found for station {}'.format(st))
         self.station = st
 
     def __len__(self):
@@ -59,7 +65,8 @@ def overpass_request(bbox):
     response = urllib.request.urlopen(url, timeout=1000)
     if response.getcode() != 200:
         raise Exception('Failed to query Overpass API: HTTP {}'.format(response.getcode()))
-    return json.load(response)['elements']
+    reader = codecs.getreader('utf-8')
+    return json.load(reader(response))['elements']
 
 
 def add_stop_areas(src):
@@ -99,7 +106,7 @@ def add_stop_areas(src):
         coords = el.get('center', el)
         station = stations.search_nn((coords['lon'], coords['lat']))[0].data
         if station.distance(coords) < MAX_DISTANCE:
-            k = (station.station['id'], station.station['tags']['name'])
+            k = (station.station['id'], station.station['tags'].get('name', 'station_with_no_name'))
             # Disregard exits and platforms that are differently named
             if el['tags'].get('name', k[1]) == k[1]:
                 if k not in stop_areas:

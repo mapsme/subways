@@ -3,10 +3,12 @@ import logging
 import math
 import urllib.parse
 import urllib.request
+from collections import Counter, defaultdict
 
 
 SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
 MAX_DISTANCE_NEARBY = 150  # in meters
+MODES = ('subway', 'light_rail', 'monorail')
 
 
 def el_id(el):
@@ -40,20 +42,27 @@ def distance(p1, p2):
 
 class Station:
     @staticmethod
+    def get_mode(el):
+        mode = el['tags'].get('station')
+        if not mode:
+            for m in MODES:
+                if el['tags'].get(m) == 'yes':
+                    mode = m
+        return mode
+
+    @staticmethod
     def is_station(el):
-        if el.get('tags', {}).get('railway', None) != 'station':
+        if el.get('tags', {}).get('railway', None) not in ('station', 'halt'):
             return False
         if 'construction' in el['tags'] or 'proposed' in el['tags']:
             return False
-        if (el['tags'].get('station', None) not in ('subway', 'light_rail') and
-                el['tags'].get('subway', None) != 'yes' and
-                el['tags'].get('light_rail', None) != 'yes'):
+        if Station.get_mode(el) not in MODES:
             return False
         return True
 
     def __init__(self, el, city):
         """Call this with a railway=station node."""
-        if el.get('tags', {}).get('railway', None) != 'station':
+        if el.get('tags', {}).get('railway', None) not in ('station', 'halt'):
             raise Exception(
                 'Station object should be instantiated from a station node. Got: {}'.format(el))
         if not Station.is_station(el):
@@ -62,10 +71,10 @@ class Station:
         if el['type'] != 'node':
             city.warn('Station is not a node', el)
         self.element = el
-        self.is_light = (el['tags'].get('station', None) == 'light_rail' or
-                         el['tags'].get('light_rail', None) == 'yes')
+        self.mode = Station.get_mode(el)
         self.id = el_id(el)
-        self.elements = set([self.id])
+        self.elements = set([self.id])  # platforms, stop_positions and a station
+        self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
         if self.id in city.stations:
             city.error('Station {} {} is listed in two stop_areas, first one:'.format(
                     el['type'], el['id']), city.stations[self.id].element)
@@ -125,7 +134,7 @@ class Route:
             return False
         if 'members' not in el:
             return False
-        if el['tags'].get('route', None) not in ('subway', 'light_rail'):
+        if el['tags'].get('route', None) not in MODES:
             return False
         if 'construction' in el['tags'] or 'proposed' in el['tags']:
             return False
@@ -149,7 +158,7 @@ class Route:
             city.warn('Missing colour on a route', relation)
         self.colour = relation['tags'].get('colour', None)
         self.network = Route.get_network(relation)
-        self.is_light = relation['tags']['route'] == 'light_rail'
+        self.mode = relation['tags']['route']
         self.rails = []
         self.stops = []
         enough_stops = False
@@ -160,21 +169,19 @@ class Route:
                 if not self.stops or self.stops[-1] != st:
                     if enough_stops:
                         if st not in self.stops:
-                            city.warn('Inconsistent platform-stop "{}" in route'.format(st.name),
-                                      relation)
+                            city.error('Inconsistent platform-stop "{}" in route'.format(st.name),
+                                       relation)
                     elif st not in self.stops:
                         self.stops.append(st)
-                        if self.is_light and not st.is_light:
-                            city.warn('Subway station "{}" in light rail route'.format(st.name),
-                                      relation)
-                        elif st.is_light and not self.is_light:
-                            city.warn('Light rail station "{}" in subway route'.format(st.name),
-                                      relation)
+                        if self.mode != st.mode:
+                            city.warn('{} station "{}" in {} route'.format(
+                                st.mode, st.name, self.mode), relation)
                     elif self.stops[0] == st and not enough_stops:
                         enough_stops = True
                     else:
-                        city.warn('Duplicate stop "{}" in route - check stop/platform order'.format(
-                            st.name), relation)
+                        city.error(
+                            'Duplicate stop "{}" in route - check stop/platform order'.format(
+                                st.name), relation)
                 continue
 
             if k not in city.elements:
@@ -189,14 +196,13 @@ class Route:
                 continue
             if m['role'] in ('stop', 'platform'):
                 if el['tags'].get('railway', None) in ('station', 'halt'):
-                    city.error('Missing station={} on a {}'.format(
-                        'light_rail' if self.is_light else 'subway', m['role']), el)
+                    city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
                 elif 'construction' in el['tags'] or 'proposed' in el['tags']:
                     city.error('An under construction {} in route'.format(m['role']), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         m['role'], m['type'], m['ref']), relation)
-            if el['tags'].get('railway', None) in ('rail', 'subway', 'light_rail'):
+            if el['tags'].get('railway', None) in ('rail', 'subway', 'light_rail', 'monorail'):
                 if 'nodes' in el:
                     self.rails.append((el['nodes'][0], el['nodes'][1]))
                 else:
@@ -218,7 +224,7 @@ class RouteMaster:
         self.best = route
         self.ref = route.ref
         self.network = route.network
-        self.is_light = route.is_light
+        self.mode = route.mode
 
     def add(self, route, city):
         if route.network != self.network:
@@ -227,9 +233,9 @@ class RouteMaster:
         if route.ref != self.ref:
             city.warn('Route "{}" has different ref from master "{}"'.format(
                 route.ref, self.ref), route.element)
-        if route.is_light != self.is_light:
-            city.error('Incompatible is_light flag: master has {} and route has {}'.format(
-                self.is_light, route.is_light), route.element)
+        if route.mode != self.mode:
+            city.error('Incompatible PT mode: master has {} and route has {}'.format(
+                self.mode, route.mode), route.element)
             return
         self.routes.append(route)
         if len(route.stops) > len(self.best.stops):
@@ -261,6 +267,7 @@ class City:
         self.stations = {}   # Dict el_id → station
         self.routes = {}     # Dict route_ref → route
         self.masters = {}    # Dict el_id of route → el_id of route_master
+        self.stop_areas = defaultdict(dict)  # El_id → el of stop_area
         self.transfers = []  # List of lists of stations
         self.station_ids = set()  # Set of stations' el_id
         self.errors = 0
@@ -278,10 +285,16 @@ class City:
         if el['type'] == 'relation' and 'members' not in el:
             return
         self.elements[el_id(el)] = el
-        if el['type'] == 'relation' and el.get('tags', {}).get('type', None) == 'route_master':
-            for m in el['members']:
-                if m['type'] == 'relation':
-                    self.masters[el_id(m)] = el_id(el)
+        if el['type'] == 'relation' and 'tags' in el:
+            if el['tags'].get('type') == 'route_master':
+                for m in el['members']:
+                    if m['type'] == 'relation':
+                        if el_id(m) in self.masters:
+                            self.error('Route in two route_masters', m)
+                        self.masters[el_id(m)] = el_id(el)
+            elif el['tags'].get('public_transport') == 'stop_area':
+                for m in el['members']:
+                    self.stop_areas[el_id(m)].append(el)
 
     def log(self, level, message, el):
         msg = '{}: {}'.format(self.name, message)
@@ -357,15 +370,17 @@ class City:
             self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))
 
     def validate(self):
+        networks = Counter()
         unused_stations = set(self.station_ids)
         for rmaster in self.routes.values():
+            networks[str(rmaster.network)] += 1
             for st in rmaster.best.stops:
                 unused_stations.discard(st.id)
         if unused_stations:
             self.warn('{} unused stations: {}'.format(
                 len(unused_stations), ', '.join(unused_stations)))
         self.count_unused_entrances()
-        light_rails = len([x for x in self.routes.values() if x.is_light])
+        light_rails = len([x for x in self.routes.values() if x.mode != 'subway'])
         if len(self.routes) - light_rails != self.num_lines:
             self.error('Found {} subway lines, expected {}'.format(
                 len(self.routes) - light_rails, self.num_lines))
@@ -379,6 +394,9 @@ class City:
         if len(self.transfers) != self.num_interchanges:
             self.error('Found {} interchanges, expected {}'.format(
                 len(self.transfers), self.num_interchanges))
+        if len(networks) > 1:
+            n_str = '; '.join(['{} ({})'.format(k, v) for k, v in networks.items()])
+            self.warn('More than one network: {}'.format(n_str))
 
     def for_mapsme(self):
         stops = []

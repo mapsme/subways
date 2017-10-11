@@ -155,7 +155,6 @@ if __name__ == '__main__':
     parser.add_argument('-q', '--quiet', action='store_true', help='Show only warnings and errors')
     parser.add_argument('-c', '--city', help='Validate only a single city')
     parser.add_argument('-o', '--output', help='JSON file for MAPS.ME')
-    parser.add_argument('-n', '--networks', type=argparse.FileType('w'), help='File to write the networks statistics')
     options = parser.parse_args()
 
     if options.quiet:
@@ -213,15 +212,6 @@ if __name__ == '__main__':
             good_cities.append(c)
 
     logging.info('%s good cities: %s', len(good_cities), ', '.join([c.name for c in good_cities]))
-
-    if options.networks:
-        from collections import Counter
-        for c in cities:
-            networks = Counter()
-            for r in c.routes.values():
-                networks[str(r.network)] += 1
-            print('{}: {}'.format(c.name, '; '.join(
-                ['{} ({})'.format(k, v) for k, v in networks.items()])), file=options.networks)
 
     # Finally, preparing a JSON file for MAPS.ME
     if options.output:

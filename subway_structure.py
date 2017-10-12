@@ -60,7 +60,7 @@ class Station:
             return False
         return True
 
-    def __init__(self, el, city):
+    def __init__(self, el, city, stop_area=None):
         """Call this with a railway=station node."""
         if el.get('tags', {}).get('railway', None) not in ('station', 'halt'):
             raise Exception(
@@ -76,36 +76,10 @@ class Station:
         self.elements = set([self.id])  # platforms, stop_positions and a station
         self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
         if self.id in city.stations:
-            city.error('Station {} {} is listed in two stop_areas, first one:'.format(
-                    el['type'], el['id']), city.stations[self.id].element)
+            city.warn('Station {} {} is listed in two stop_areas, first one:'.format(
+                    el['type'], el['id']), city.stations[self.id][0].element)
 
-        # Find a stop_area relation
-        self.stop_area = None
-        nearby = []
-        center = el_center(el)
-        if center is None:
-            raise Exception('Could not find center of {}'.format(el))
-        for d in city.elements.values():
-            if 'tags' not in d:
-                continue
-            # If it's a stop_area relation containing "el", record it
-            if d['type'] == 'relation' and d['tags'].get('public_transport', None) == 'stop_area':
-                for m in d['members']:
-                    if m['type'] == el['type'] and m['ref'] == el['id']:
-                        self.stop_area = d
-                        break
-            # Otherwise record all platforms, stops and entrances nearby
-            elif d['type'] != 'relation' and (
-                    d['tags'].get('railway', None) in ('platform', 'subway_entrance') or
-                    d['tags'].get('public_transport', None) in ('platform', 'stop_position')):
-                # Take care to not add other stations
-                if 'station' not in d['tags']:
-                    d_center = el_center(d)
-                    if d_center is not None and distance(center, d_center) <= MAX_DISTANCE_NEARBY:
-                        nearby.append(d)
-            if self.stop_area:
-                break
-
+        self.stop_area = stop_area
         if self.stop_area:
             # If we have a stop area, add all elements from it
             self.elements.add(el_id(self.stop_area))
@@ -115,8 +89,19 @@ class Station:
                     self.elements.add(k)
         else:
             # Otherwise add nearby entrances and stop positions
-            for k in nearby:
-                self.elements.add(el_id(k))
+            center = el_center(el)
+            if center is None:
+                raise Exception('Could not find center of {}'.format(el))
+            for d in city.elements.values():
+                if 'tags' in d and (
+                        d['tags'].get('railway', None) in ('platform', 'subway_entrance') or
+                        d['tags'].get('public_transport', None) in ('platform', 'stop_position')):
+                    # Take care to not add other stations
+                    if 'station' not in d['tags']:
+                        d_center = el_center(d)
+                        if d_center is not None and distance(
+                                center, d_center) <= MAX_DISTANCE_NEARBY:
+                            self.elements.add(el_id(d))
 
         # TODO: Set name, colour etc.
         self.name = el['tags'].get('name', 'Unknown')
@@ -165,7 +150,11 @@ class Route:
         for m in relation['members']:
             k = el_id(m)
             if k in city.stations:
-                st = city.stations[k]
+                st_list = city.stations[k]
+                if len(st_list) > 1:
+                    city.error('Ambigous station {} in route. Please use stop_position or split '
+                               'interchange stations'.format(k), relation)
+                st = st_list[0]
                 if not self.stops or self.stops[-1] != st:
                     if enough_stops:
                         if st not in self.stops:
@@ -264,10 +253,10 @@ class City:
         else:
             self.bbox = None
         self.elements = {}   # Dict el_id → el
-        self.stations = {}   # Dict el_id → station
+        self.stations = defaultdict(list)   # Dict el_id → list of stations
         self.routes = {}     # Dict route_ref → route
         self.masters = {}    # Dict el_id of route → el_id of route_master
-        self.stop_areas = defaultdict(dict)  # El_id → el of stop_area
+        self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
         self.transfers = []  # List of lists of stations
         self.station_ids = set()  # Set of stations' el_id
         self.errors = 0
@@ -301,7 +290,7 @@ class City:
         if el:
             tags = el.get('tags', {})
             msg += ' ({} {}, "{}")'.format(
-                el['type'], el['id'],
+                el['type'], el.get('id', el.get('ref')),
                 tags.get('name', tags.get('ref', '')))
         logging.log(level, msg)
 
@@ -319,17 +308,26 @@ class City:
             k = el_id(m)
             if k not in self.stations:
                 return
-            transfer.add(self.stations[k])
+            transfer.add(self.stations[k][0])
         if transfer:
             self.transfers.append(transfer)
 
     def extract_routes(self):
         for el in self.elements.values():
             if Station.is_station(el):
-                station = Station(el, self)
-                self.station_ids.add(station.id)
-                for e in station.elements:
-                    self.stations[e] = station
+                s_id = el_id(el)
+                if s_id in self.stop_areas:
+                    stations = []
+                    # TODO: Check that each stop_area contains only one station
+                    for sa in self.stop_areas[s_id]:
+                        stations.append(Station(el, self, sa))
+                else:
+                    stations = [Station(el, self)]
+                for station in stations:
+                    self.station_ids.add(station.id)
+                    for e in station.elements:
+                        # TODO: Check for duplicates for platforms and stops?
+                        self.stations[e].append(station)
 
         for el in self.elements.values():
             if Route.is_route(el):

@@ -151,10 +151,10 @@ class Route:
             k = el_id(m)
             if k in city.stations:
                 st_list = city.stations[k]
+                st = st_list[0]
                 if len(st_list) > 1:
                     city.error('Ambigous station {} in route. Please use stop_position or split '
-                               'interchange stations'.format(k), relation)
-                st = st_list[0]
+                               'interchange stations'.format(st.name), relation)
                 if not self.stops or self.stops[-1] != st:
                     if enough_stops:
                         if st not in self.stops:

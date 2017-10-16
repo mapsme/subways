@@ -10,6 +10,8 @@ SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
 MAX_DISTANCE_NEARBY = 150  # in meters
 MODES = ('subway', 'light_rail', 'monorail')
 
+transfers = []
+
 
 def el_id(el):
     if 'type' not in el:
@@ -24,8 +26,8 @@ def el_center(el):
         if el['center']['lat'] == 0.0:
             # Some relations don't have centers. We need route_masters and stop_area_groups.
             if el['type'] == 'relation' and 'tags' in el and (
-                    el['tags'].get('type', None) == 'route_master' or
-                    el['tags'].get('public_transport', None) == 'stop_area_group'):
+                    el['tags'].get('type') == 'route_master' or
+                    el['tags'].get('public_transport') == 'stop_area_group'):
                 return None
         return (el['center']['lon'], el['center']['lat'])
     return None
@@ -52,7 +54,7 @@ class Station:
 
     @staticmethod
     def is_station(el):
-        if el.get('tags', {}).get('railway', None) not in ('station', 'halt'):
+        if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             return False
         if 'construction' in el['tags'] or 'proposed' in el['tags']:
             return False
@@ -62,7 +64,7 @@ class Station:
 
     def __init__(self, el, city, stop_area=None):
         """Call this with a railway=station node."""
-        if el.get('tags', {}).get('railway', None) not in ('station', 'halt'):
+        if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             raise Exception(
                 'Station object should be instantiated from a station node. Got: {}'.format(el))
         if not Station.is_station(el):
@@ -94,8 +96,8 @@ class Station:
                 raise Exception('Could not find center of {}'.format(el))
             for d in city.elements.values():
                 if 'tags' in d and (
-                        d['tags'].get('railway', None) in ('platform', 'subway_entrance') or
-                        d['tags'].get('public_transport', None) in ('platform', 'stop_position')):
+                        d['tags'].get('railway') in ('platform', 'subway_entrance') or
+                        d['tags'].get('public_transport') in ('platform', 'stop_position')):
                     # Take care to not add other stations
                     if 'station' not in d['tags']:
                         d_center = el_center(d)
@@ -115,11 +117,11 @@ class Route:
     """The longest route for a city with a unique ref."""
     @staticmethod
     def is_route(el):
-        if el['type'] != 'relation' or el.get('tags', {}).get('type', None) != 'route':
+        if el['type'] != 'relation' or el.get('tags', {}).get('type') != 'route':
             return False
         if 'members' not in el:
             return False
-        if el['tags'].get('route', None) not in MODES:
+        if el['tags'].get('route') not in MODES:
             return False
         if 'construction' in el['tags'] or 'proposed' in el['tags']:
             return False
@@ -184,16 +186,16 @@ class Route:
                 city.error('Untagged object in a route', relation)
                 continue
             if m['role'] in ('stop', 'platform'):
-                if el['tags'].get('railway', None) in ('station', 'halt'):
+                if el['tags'].get('railway') in ('station', 'halt'):
                     city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
                 elif 'construction' in el['tags'] or 'proposed' in el['tags']:
                     city.error('An under construction {} in route'.format(m['role']), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         m['role'], m['type'], m['ref']), relation)
-            if el['tags'].get('railway', None) in ('rail', 'subway', 'light_rail', 'monorail'):
+            if el['tags'].get('railway') in ('rail', 'subway', 'light_rail', 'monorail'):
                 if 'nodes' in el:
-                    self.rails.append((el['nodes'][0], el['nodes'][1]))
+                    self.rails.append((el['nodes'][0], el['nodes'][-1]))
                 else:
                     city.error('Cannot find nodes in a railway', el)
                 continue
@@ -257,10 +259,9 @@ class City:
         self.routes = {}     # Dict route_ref → route
         self.masters = {}    # Dict el_id of route → el_id of route_master
         self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
-        self.transfers = []  # List of lists of stations
         self.station_ids = set()  # Set of stations' el_id
-        self.errors = 0
-        self.warnings = 0
+        self.errors = []
+        self.warnings = []
 
     def contains(self, el):
         center = el_center(el)
@@ -285,32 +286,27 @@ class City:
                 for m in el['members']:
                     self.stop_areas[el_id(m)].append(el)
 
-    def log(self, level, message, el):
+    def log_message(self, message, el):
         msg = '{}: {}'.format(self.name, message)
         if el:
             tags = el.get('tags', {})
             msg += ' ({} {}, "{}")'.format(
                 el['type'], el.get('id', el.get('ref')),
                 tags.get('name', tags.get('ref', '')))
-        logging.log(level, msg)
+        return msg
 
     def warn(self, message, el=None):
-        self.warnings += 1
-        self.log(logging.WARNING, message, el)
+        msg = self.log_message(message, el)
+        self.warnings.append(msg)
+        logging.warning(msg)
 
     def error(self, message, el=None):
-        self.errors += 1
-        self.log(logging.ERROR, message, el)
+        msg = self.log_message(message, el)
+        self.errors.append(msg)
+        logging.error(msg)
 
-    def make_transfer(self, sag):
-        transfer = set()
-        for m in sag['members']:
-            k = el_id(m)
-            if k not in self.stations:
-                return
-            transfer.add(self.stations[k][0])
-        if transfer:
-            self.transfers.append(transfer)
+    def is_good(self):
+        return len(self.errors) == 0
 
     def extract_routes(self):
         for el in self.elements.values():
@@ -340,22 +336,19 @@ class City:
                 else:
                     self.routes[k].add(route, self)
 
-            if (el['type'] == 'relation' and
-                    el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
-                self.make_transfer(el)
 
     def count_unused_entrances(self):
         stop_areas = set()
         for el in self.elements.values():
             if (el['type'] == 'relation' and 'tags' in el and
-                    el['tags'].get('public_transport', None) == 'stop_area' and
+                    el['tags'].get('public_transport') == 'stop_area' and
                     'members' in el):
                 stop_areas.update([el_id(m) for m in el['members']])
         unused = []
         not_in_sa = []
         for el in self.elements.values():
             if (el['type'] == 'node' and 'tags' in el and
-                    el['tags'].get('railway', None) == 'subway_entrance'):
+                    el['tags'].get('railway') == 'subway_entrance'):
                 i = el_id(el)
                 if i not in self.stations:
                     unused.append(i)
@@ -403,6 +396,31 @@ class City:
         network = {'network': 'TODO', 'agency_id': 12345, 'routes': routes}
         result = {'stops': stops, 'transfers': transfers, 'networks': [network]}
         return result
+
+
+def find_transfers(elements, cities):
+    stop_area_groups = []
+    for el in elements:
+        if (el['type'] == 'relation' and
+                el.get('tags', {}).get('public_transport') == 'stop_area_group'):
+            stop_area_groups.append(el)
+
+    stations = defaultdict(set)  # el_id -> list of station objects
+    for city in cities:
+        for el, st in city.stations:
+            stations[el].update(st)
+
+    for sag in stop_area_groups:
+        transfer = set()
+        for m in el['members']:
+            k = el_id(m)
+            if k not in stations:
+                transfer = []
+                break
+            transfer.update(stations[k])
+        if transfer:
+            transfers.append(transfer)
+    return transfers
 
 
 def download_cities():

@@ -141,10 +141,22 @@ def load_xml(f):
     return elements
 
 
-def merge_mapsme_networks(networks):
+def mapsme_network(city):
+    routes = []
+    network = [{'network': 'TODO', 'agency_id': 12345, 'routes': routes}]
+    return network
+
+
+def prepare_mapsme_data(transfers, networks):
+    stops = set()
+    # TODO: prepare a set of all stations
     result = {}
-    for k in ('stops', 'transfers', 'networks'):
-        result[k] = sum([n[k] for n in networks], [])
+    result['stops'] = list(stops)
+    result['transfers'] = []
+    for t in transfers:
+        # TODO: decouple transfers and add travel time
+        pass
+    result['networks'] = sum(networks, [])
     return result
 
 
@@ -233,6 +245,6 @@ if __name__ == '__main__':
 
     # Finally, prepare a JSON file for MAPS.ME
     if options.output:
-        networks = [c.for_mapsme() for c in good_cities]
+        networks = [mapsme_network(c) for c in good_cities]
         with open(options.output, 'w') as f:
-            json.dump(merge_mapsme_networks(networks), f)
+            json.dump(prepare_mapsme_data(transfers, networks), f)

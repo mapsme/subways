@@ -108,8 +108,8 @@ class Station:
                                 center, d_center) <= MAX_DISTANCE_NEARBY:
                             self.elements.add(el_id(d))
 
-        # TODO: Set name, colour etc.
         self.name = el['tags'].get('name', 'Unknown')
+        self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
         self.colour = el['tags'].get('colour', None)
 
     def contains(self, el):
@@ -465,14 +465,6 @@ class City:
         if len(networks) > 1:
             n_str = '; '.join(['{} ({})'.format(k, v) for k, v in networks.items()])
             self.warn('More than one network: {}'.format(n_str))
-
-    def for_mapsme(self):
-        stops = []
-        transfers = []
-        routes = []
-        network = {'network': 'TODO', 'agency_id': 12345, 'routes': routes}
-        result = {'stops': stops, 'transfers': transfers, 'networks': [network]}
-        return result
 
 
 def find_transfers(elements, cities):

@@ -100,6 +100,8 @@ def add_stop_areas(src):
     for el in src:
         if 'tags' not in el:
             continue
+        if 'station' in el['tags']:
+            continue
         if (el['tags'].get('railway', None) not in ('subway_entrance', 'platform') and
                 el['tags'].get('public_transport', None) not in ('platform', 'stop_position')):
             continue

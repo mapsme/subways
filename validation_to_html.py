@@ -3,51 +3,45 @@ import datetime
 import re
 import os
 import sys
-from subway_structure import download_cities, SPREADSHEET_ID
+import json
+from subway_structure import SPREADSHEET_ID
 from v2h_templates import *
 
 date = datetime.datetime.now().strftime('%d.%m.%Y %H:%M')
 
 
 class CityData:
-    REGEXPS = (
-        ('subwayl', re.compile(r'Found (\d+) subway lines, expected (\d+)')),
-        ('lightrl', re.compile(r'Found (\d+) light rail.*expected (\d+)')),
-        ('stations', re.compile(r'Found (\d+) stations.*expected (\d+)')),
-        ('transfers', re.compile(r'Found (\d+) interch.*expected (\d+)')),
-    )
-
     def __init__(self, city=None):
         self.city = city is not None
-        if city:
-            self.country = city.country
-            self.continent = city.continent
-            self.errors = []
-            self.warnings = []
         self.data = {
-            'stations_expected': city.num_stations if city else 0,
-            'subwayl_expected': city.num_lines if city else 0,
-            'lightrl_expected': city.num_light_lines if city else 0,
-            'transfers_expected': city.num_interchanges if city else 0,
-            'unused_entrances': 0,
-            'good_cities': 1 if city else 0,
+            'good_cities': 0,
             'total_cities': 1 if city else 0,
             'num_errors': 0,
             'num_warnings': 0
         }
-        for k, _ in CityData.REGEXPS:
-            self.data[k+'_found'] = self.data[k+'_expected']
+        if city:
+            self.country = city['country']
+            self.continent = city['continent']
+            self.errors = city['errors']
+            self.warnings = city['warnings']
+            if not self.errors:
+                self.data['good_cities'] = 1
+            self.data['num_errors'] = len(self.errors)
+            self.data['num_warnings'] = len(self.warnings)
+            for k, v in city.items():
+                if 'found' in k or 'expected' in k or 'unused' in k:
+                    self.data[k] = v
 
-    def __get__(self, i):
-        return self.data[i]
+    def not__get__(self, i):
+        return self.data.get(i)
 
-    def __set__(self, i, value):
+    def not__set__(self, i, value):
         self.data[i] = value
 
     def __add__(self, other):
         d = CityData()
-        for k in d.data:
-            d.data[k] = self.data[k] + other.data[k]
+        for k in self.data:
+            d.data[k] = self.data.get(k, 0) + other.data.get(k, 0)
         return d
 
     def format(self, s):
@@ -105,7 +99,8 @@ LOG_LINE = re.compile(r'^(\d\d:\d\d:\d\d)\s+([A-Z]+)\s+([^:]+):\s+(.+?)\s*$')
 def osm_links(s):
     """Converts object mentions to HTML links."""
     def link(m):
-        return '<a href="https://www.openstreetmap.org/{}/{}">{}</a>'.format(EXPAND_OSM_TYPE[m[1][0]], m[2], m[0])
+        return '<a href="https://www.openstreetmap.org/{}/{}">{}</a>'.format(
+            EXPAND_OSM_TYPE[m[1][0]], m[2], m[0])
     s = RE_SHORT.sub(link, s)
     s = RE_FULL.sub(link, s)
     return s
@@ -120,26 +115,8 @@ if len(sys.argv) < 2:
     print('Usage: {} <validation.log> [<target_directory>]'.format(sys.argv[0]))
     sys.exit(1)
 
-cities = {c.name: c for c in download_cities()}
-data = {c.name: CityData(c) for c in cities.values()}
-
-last_city = None
 with open(sys.argv[1], 'r') as f:
-    for line in f:
-        m = LOG_LINE.match(line)
-        if m:
-            level = m.group(2)
-            if level == 'INFO':
-                continue
-            city_name = m.group(3)
-            msg = m.group(4)
-            if city_name not in data:
-                raise Exception('City {} not found in the cities list'.format(city_name))
-            city = data[city_name]
-            if level == 'WARNING':
-                city.add_warning(msg)
-            elif level == 'ERROR':
-                city.add_error(msg)
+    data = {c['name']: CityData(c) for c in json.load(f)}
 
 countries = {}
 continents = {}

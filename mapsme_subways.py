@@ -154,7 +154,8 @@ if __name__ == '__main__':
         help='Use city boundaries to query Overpass API instead of querying the world')
     parser.add_argument('-q', '--quiet', action='store_true', help='Show only warnings and errors')
     parser.add_argument('-c', '--city', help='Validate only a single city')
-    parser.add_argument('-l', '--log', type=parser.FileType('w'), help='Validation log file name')
+    parser.add_argument('-l', '--log', type=argparse.FileType('w'),
+                        help='Validation JSON file name')
     parser.add_argument('-o', '--output', help='JSON file for MAPS.ME')
     options = parser.parse_args()
 
@@ -216,6 +217,10 @@ if __name__ == '__main__':
     transfers = find_transfers(osm, cities)
 
     logging.info('%s good cities: %s', len(good_cities), ', '.join([c.name for c in good_cities]))
+
+    if options.log:
+        res = [x.get_validation_result() for x in cities]
+        json.dump(res, options.log)
 
     # Finally, preparing a JSON file for MAPS.ME
     if options.output:

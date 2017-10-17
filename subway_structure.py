@@ -259,6 +259,7 @@ class City:
         self.routes = {}     # Dict route_ref → route
         self.masters = {}    # Dict el_id of route → el_id of route_master
         self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
+        self.transfers = []  # List of lists of stations
         self.station_ids = set()  # Set of stations' el_id
         self.errors = []
         self.warnings = []
@@ -284,7 +285,31 @@ class City:
                         self.masters[el_id(m)] = el_id(el)
             elif el['tags'].get('public_transport') == 'stop_area':
                 for m in el['members']:
-                    self.stop_areas[el_id(m)].append(el)
+                    stop_area = self.stop_areas[el_id(m)]
+                    if el in stop_area:
+                        self.warn('Duplicate element in a stop area', m)
+                    else:
+                        stop_area.append(el)
+
+    def get_validation_result(self):
+        result = {
+            'name': self.name,
+            'country': self.country,
+            'continent': self.continent,
+            'stations_expected': self.num_stations,
+            'subwayl_expected': self.num_lines,
+            'lightrl_expected': self.num_light_lines,
+            'transfers_expected': self.num_interchanges,
+            'stations_found': self.found_stations,
+            'subwayl_found': self.found_lines,
+            'lightrl_found': self.found_light_lines,
+            'transfers_found': self.found_interchanges,
+            'unused_entrances': self.unused_entrances,
+            'networks': self.found_networks,
+        }
+        result['warnings'] = self.warnings
+        result['errors'] = self.errors
+        return result
 
     def log_message(self, message, el):
         msg = '{}: {}'.format(self.name, message)
@@ -298,12 +323,20 @@ class City:
     def warn(self, message, el=None):
         msg = self.log_message(message, el)
         self.warnings.append(msg)
-        logging.warning(msg)
 
     def error(self, message, el=None):
         msg = self.log_message(message, el)
         self.errors.append(msg)
-        logging.error(msg)
+
+    def make_transfer(self, sag):
+        transfer = set()
+        for m in sag['members']:
+            k = el_id(m)
+            if k not in self.stations:
+                return
+            transfer.add(self.stations[k][0])
+        if transfer:
+            self.transfers.append(transfer)
 
     def is_good(self):
         return len(self.errors) == 0
@@ -336,6 +369,9 @@ class City:
                 else:
                     self.routes[k].add(route, self)
 
+        if (el['type'] == 'relation' and
+                el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
+            self.make_transfer(el)
 
     def count_unused_entrances(self):
         stop_areas = set()
@@ -354,10 +390,12 @@ class City:
                     unused.append(i)
                 if i not in stop_areas:
                     not_in_sa.append(i)
+        self.unused_entrances = len(unused)
         if unused:
             list_unused = '' if len(unused) > 20 else ': ' + ', '.join(unused)
             self.error('Found {} unused subway entrances{}'.format(len(unused), list_unused))
         if not_in_sa:
+            self.entrances_not_in_stop_areas = len(not_in_sa)
             self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))
 
     def validate(self):
@@ -368,23 +406,27 @@ class City:
             for st in rmaster.best.stops:
                 unused_stations.discard(st.id)
         if unused_stations:
+            self.unused_stations = len(unused_stations)
             self.warn('{} unused stations: {}'.format(
-                len(unused_stations), ', '.join(unused_stations)))
+                self.unused_stations, ', '.join(unused_stations)))
         self.count_unused_entrances()
-        light_rails = len([x for x in self.routes.values() if x.mode != 'subway'])
-        if len(self.routes) - light_rails != self.num_lines:
+        self.found_light_lines = len([x for x in self.routes.values() if x.mode != 'subway'])
+        self.found_lines = len(self.routes) - self.found_light_lines
+        if self.found_lines != self.num_lines:
             self.error('Found {} subway lines, expected {}'.format(
-                len(self.routes) - light_rails, self.num_lines))
-        if light_rails != self.num_light_lines:
+                self.found_lines, self.num_lines))
+        if self.found_light_lines != self.num_light_lines:
             self.error('Found {} light rail lines, expected {}'.format(
-                light_rails, self.num_light_lines))
-        station_count = len(self.station_ids) - len(unused_stations)
-        if station_count != self.num_stations:
+                self.found_light_lines, self.num_light_lines))
+        self.found_stations = len(self.station_ids) - len(unused_stations)
+        if self.found_stations != self.num_stations:
             self.error('Found {} stations in routes, expected {}'.format(
-                station_count, self.num_stations))
-        if len(self.transfers) != self.num_interchanges:
+                self.found_stations, self.num_stations))
+        self.found_interchanges = len(self.transfers)
+        if self.found_interchanges != self.num_interchanges:
             self.error('Found {} interchanges, expected {}'.format(
-                len(self.transfers), self.num_interchanges))
+                self.found_interchanges, self.num_interchanges))
+        self.found_networks = len(networks)
         if len(networks) > 1:
             n_str = '; '.join(['{} ({})'.format(k, v) for k, v in networks.items()])
             self.warn('More than one network: {}'.format(n_str))
@@ -401,21 +443,21 @@ class City:
 def find_transfers(elements, cities):
     stop_area_groups = []
     for el in elements:
-        if (el['type'] == 'relation' and
+        if (el['type'] == 'relation' and 'members' in el and
                 el.get('tags', {}).get('public_transport') == 'stop_area_group'):
             stop_area_groups.append(el)
 
     stations = defaultdict(set)  # el_id -> list of station objects
     for city in cities:
-        for el, st in city.stations:
+        for el, st in city.stations.items():
             stations[el].update(st)
 
     for sag in stop_area_groups:
         transfer = set()
-        for m in el['members']:
+        for m in sag['members']:
             k = el_id(m)
             if k not in stations:
-                transfer = []
+                transfer = None
                 break
             transfer.update(stations[k])
         if transfer:

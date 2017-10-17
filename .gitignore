@@ -1,4 +1,5 @@
 __pycache__/
 *.log
+*.json
 *.osm
 validate.sh

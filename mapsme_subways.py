@@ -7,7 +7,12 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from subway_structure import download_cities, find_transfers
+
+from subway_structure import (
+    download_cities,
+    find_transfers,
+    get_unused_entrances_geojson,
+)
 
 
 def overpass_request(bboxes=None):
@@ -80,7 +85,6 @@ def load_xml(f):
                 el['members'] = members
             elements.append(el)
             element.clear()
-    logging.info('Read %s elements, now finding centers of ways and relations', len(elements))
 
     # Now make centers, assuming relations go after ways
     ways = {}
@@ -154,6 +158,8 @@ if __name__ == '__main__':
         help='Use city boundaries to query Overpass API instead of querying the world')
     parser.add_argument('-q', '--quiet', action='store_true', help='Show only warnings and errors')
     parser.add_argument('-c', '--city', help='Validate only a single city')
+    parser.add_argument('-e', '--entrances', type=argparse.FileType('w'),
+                        help='Export unused subway entrances as GeoJSON here')
     parser.add_argument('-l', '--log', type=argparse.FileType('w'),
                         help='Validation JSON file name')
     parser.add_argument('-o', '--output', help='JSON file for MAPS.ME')
@@ -222,7 +228,10 @@ if __name__ == '__main__':
         res = [x.get_validation_result() for x in cities]
         json.dump(res, options.log)
 
-    # Finally, preparing a JSON file for MAPS.ME
+    if options.entrances:
+        json.dump(get_unused_entrances_geojson(osm), options.entrances)
+
+    # Finally, prepare a JSON file for MAPS.ME
     if options.output:
         networks = [c.for_mapsme() for c in good_cities]
         with open(options.output, 'w') as f:

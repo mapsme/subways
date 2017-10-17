@@ -11,6 +11,7 @@ MAX_DISTANCE_NEARBY = 150  # in meters
 MODES = ('subway', 'light_rail', 'monorail')
 
 transfers = []
+used_entrances = set()
 
 
 def el_id(el):
@@ -88,6 +89,8 @@ class Station:
             for m in self.stop_area['members']:
                 k = el_id(m)
                 if k in city.elements:
+                    if Station.is_station(city.elements[k]) and k != self.id:
+                        city.error('Stop area has two stations', self.stop_area)
                     self.elements.add(k)
         else:
             # Otherwise add nearby entrances and stop positions
@@ -210,26 +213,48 @@ class Route:
 
 
 class RouteMaster:
-    def __init__(self, route):
-        self.routes = [route]
-        self.best = route
-        self.ref = route.ref
-        self.network = route.network
-        self.mode = route.mode
+    def __init__(self, master=None):
+        self.routes = []
+        self.best = None
+        if master:
+            self.ref = master['tags'].get('ref', master['tags'].get('name', None))
+            self.colour = master['tags'].get('colour', None)
+            self.network = Route.get_network(master)
+            self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
+        else:
+            self.ref = None
+            self.colour = None
+            self.network = None
+            self.mode = None
 
     def add(self, route, city):
-        if route.network != self.network:
+        if not self.network:
+            self.network = route.network
+        elif route.network != self.network:
             city.error('Route has different network ("{}") from master "{}"'.format(
                 route.network, self.network), route.element)
-        if route.ref != self.ref:
+
+        if not self.colour:
+            self.colour = route.colour
+        elif route.colour != self.colour:
+            city.warn('Route "{}" has different colour from master "{}"'.format(
+                route.colour, self.colour), route.element)
+
+        if not self.ref:
+            self.ref = route.ref
+        elif route.ref != self.ref:
             city.warn('Route "{}" has different ref from master "{}"'.format(
                 route.ref, self.ref), route.element)
-        if route.mode != self.mode:
+
+        if not self.mode:
+            self.mode = route.mode
+        elif route.mode != self.mode:
             city.error('Incompatible PT mode: master has {} and route has {}'.format(
                 self.mode, route.mode), route.element)
             return
+
         self.routes.append(route)
-        if len(route.stops) > len(self.best.stops):
+        if not self.best or len(route.stops) > len(self.best.stops):
             self.best = route
 
     def __len__(self):
@@ -347,33 +372,41 @@ class City:
                 s_id = el_id(el)
                 if s_id in self.stop_areas:
                     stations = []
-                    # TODO: Check that each stop_area contains only one station
                     for sa in self.stop_areas[s_id]:
                         stations.append(Station(el, self, sa))
                 else:
                     stations = [Station(el, self)]
+
                 for station in stations:
                     self.station_ids.add(station.id)
-                    for e in station.elements:
+                    for st_el in station.elements:
                         # TODO: Check for duplicates for platforms and stops?
-                        self.stations[e].append(station)
+                        self.stations[st_el].append(station)
 
         for el in self.elements.values():
             if Route.is_route(el):
                 if self.networks and Route.get_network(el) not in self.networks:
                     continue
                 route = Route(el, self)
-                k = self.masters.get(route.id, route.ref)
-                if k not in self.routes:
-                    self.routes[k] = RouteMaster(route)
+                if route.id in self.masters:
+                    k = self.masters[route.id]
+                    master = self.elements.get(k, None)
                 else:
-                    self.routes[k].add(route, self)
+                    k = route.ref
+                    master = None
+                if k not in self.routes:
+                    self.routes[k] = RouteMaster(master)
+                self.routes[k].add(route, self)
+                # Sometimes adding a route to a newly initialized RouteMaster can fail
+                if len(self.routes[k]) == 0:
+                    del self.routes[k]
 
         if (el['type'] == 'relation' and
                 el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
             self.make_transfer(el)
 
     def count_unused_entrances(self):
+        global used_entrances
         stop_areas = set()
         for el in self.elements.values():
             if (el['type'] == 'relation' and 'tags' in el and
@@ -388,6 +421,8 @@ class City:
                 i = el_id(el)
                 if i not in self.stations:
                     unused.append(i)
+                else:
+                    used_entrances.add(i)
                 if i not in stop_areas:
                     not_in_sa.append(i)
         self.unused_entrances = len(unused)
@@ -441,6 +476,8 @@ class City:
 
 
 def find_transfers(elements, cities):
+    global transfers
+    transfers = []
     stop_area_groups = []
     for el in elements:
         if (el['type'] == 'relation' and 'members' in el and
@@ -463,6 +500,19 @@ def find_transfers(elements, cities):
         if transfer:
             transfers.append(transfer)
     return transfers
+
+
+def get_unused_entrances_geojson(elements):
+    global used_entrances
+    features = []
+    for el in elements:
+        if (el['type'] == 'node' and 'tags' in el and
+                el['tags'].get('railway') == 'subway_entrance'):
+            if el_id(el) not in used_entrances:
+                geometry = {'type': 'Point', 'coordinates': el_center(el)}
+                properties = {k: v for k, v in el['tags'].items() if k != 'railway'}
+                features.append({'type': 'Feature', 'geometry': geometry, 'properties': properties})
+    return {'type': 'FeatureCollection', 'features': features}
 
 
 def download_cities():

@@ -230,13 +230,13 @@ class RouteMaster:
     def add(self, route, city):
         if not self.network:
             self.network = route.network
-        elif route.network != self.network:
+        elif route.network and route.network != self.network:
             city.error('Route has different network ("{}") from master "{}"'.format(
                 route.network, self.network), route.element)
 
         if not self.colour:
             self.colour = route.colour
-        elif route.colour != self.colour:
+        elif route.colour and route.colour != self.colour:
             city.warn('Route "{}" has different colour from master "{}"'.format(
                 route.colour, self.colour), route.element)
 

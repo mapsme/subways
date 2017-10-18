@@ -112,7 +112,7 @@ for c in data.values():
 
 date = datetime.datetime.now().strftime('%d.%m.%Y %H:%M')
 path = '.' if len(sys.argv) < 3 else sys.argv[2]
-index = open(os.path.join(path, 'index.html'), 'w')
+index = open(os.path.join(path, 'index.html'), 'w', encoding='utf-8')
 index.write(tmpl(INDEX_HEADER))
 
 for continent in sorted(continents.keys()):
@@ -121,7 +121,7 @@ for continent in sorted(continents.keys()):
         country_file_name = country.lower().replace(' ', '-') + '.html'
         content += tmpl(INDEX_COUNTRY, countries[country], file=country_file_name,
                         country=country, continent=continent)
-        country_file = open(os.path.join(path, country_file_name), 'w')
+        country_file = open(os.path.join(path, country_file_name), 'w', encoding='utf-8')
         country_file.write(tmpl(COUNTRY_HEADER, country=country, continent=continent))
         for name, city in sorted(data.items()):
             if city.country == country:

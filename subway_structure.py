@@ -63,6 +63,16 @@ class Station:
             return False
         return True
 
+    @staticmethod
+    def is_stop_or_platform(el):
+        if 'tags' not in el:
+            return False
+        if el['tags'].get('railway') == 'platform':
+            return True
+        if el['tags'].get('public_transport') in ('platform', 'stop_position'):
+            return True
+        return False
+
     def __init__(self, el, city, stop_area=None):
         """Call this with a railway=station node."""
         if el.get('tags', {}).get('railway') not in ('station', 'halt'):
@@ -73,47 +83,69 @@ class Station:
 
         if el['type'] != 'node':
             city.warn('Station is not a node', el)
-        self.element = el
-        self.mode = Station.get_mode(el)
-        self.id = el_id(el)
-        self.elements = set([self.id])  # platforms, stop_positions and a station
-        self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
-        if self.id in city.stations:
-            city.warn('Station {} {} is listed in two stop_areas, first one:'.format(
-                    el['type'], el['id']), city.stations[self.id][0].element)
 
-        self.stop_area = stop_area
-        if self.stop_area:
+        self.id = el_id(stop_area) if stop_area else el_id(el)
+        self.element = el  # always railway=station
+        self.stops_and_platforms = set()  # set of el_ids of platforms and stop_positions
+        self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
+
+        self.mode = Station.get_mode(el)
+        self.name = el['tags'].get('name', 'Unknown')
+        self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
+        self.colour = el['tags'].get('colour', None)
+
+        if stop_area:
             # If we have a stop area, add all elements from it
-            self.elements.add(el_id(self.stop_area))
-            for m in self.stop_area['members']:
+            for m in stop_area['members']:
                 k = el_id(m)
-                if k in city.elements:
-                    if Station.is_station(city.elements[k]) and k != self.id:
-                        city.error('Stop area has two stations', self.stop_area)
-                    self.elements.add(k)
+                m_el = city.elements.get(k)
+                if m_el and 'tags' in m_el:
+                    if Station.is_station(m_el):
+                        if k != el_id(self.element):
+                            city.error('Stop area has two stations', stop_area)
+                        self.stops_and_platforms.add(k)
+                    elif Station.is_stop_or_platform(m_el):
+                        self.stops_and_platforms.add(k)
+                    elif m_el['tags'].get('railway') == 'subway_entrance':
+                        is_entrance = (m_el['tags'].get('entrance') != 'exit' and
+                                       m['role'] != 'exit_only')
+                        is_exit = (m_el['tags'].get('entrance') != 'entrance' and
+                                   m['role'] != 'entry_only')
+                        self.exits[k] = (is_entrance, is_exit)
         else:
             # Otherwise add nearby entrances and stop positions
             center = el_center(el)
             if center is None:
                 raise Exception('Could not find center of {}'.format(el))
-            for d in city.elements.values():
-                if 'tags' in d and (
-                        d['tags'].get('railway') in ('platform', 'subway_entrance') or
-                        d['tags'].get('public_transport') in ('platform', 'stop_position')):
+            for c_el in city.elements.values():
+                c_center = el_center(c_el)
+                if 'tags' not in c_el or not c_center:
+                    continue
+                if Station.is_stop_or_platform(c_el):
                     # Take care to not add other stations
-                    if 'station' not in d['tags']:
-                        d_center = el_center(d)
-                        if d_center is not None and distance(
-                                center, d_center) <= MAX_DISTANCE_NEARBY:
-                            self.elements.add(el_id(d))
+                    if 'station' not in c_el['tags']:
+                        if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
+                            self.stops_and_platforms.add(el_id(c_el))
+                elif c_el['tags'].get('railway') == 'subway_entrance':
+                    if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
+                        etag = c_el['tags'].get('entrance')
+                        self.exits[el_id(c_el)] = (etag != 'exit', etag != 'entrance')
 
-        self.name = el['tags'].get('name', 'Unknown')
-        self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
-        self.colour = el['tags'].get('colour', None)
+        if self.exits:
+            found_entry = found_exit = False
+            for e in self.exits.values():
+                found_entry |= e[0]
+                found_exit |= e[1]
+            if not found_entry:
+                city.error('Only exits for a station, no entrances', el)
+            if not found_exit:
+                city.error('No exits for a station', el)
 
-    def contains(self, el):
-        return el_id(el) in self.elements
+    def get_elements(self):
+        result = set([self.id, el_id(self.element)])
+        result.update(self.exits.keys())
+        result.update(self.stops_and_platforms)
+        return result
 
 
 class Route:
@@ -285,7 +317,8 @@ class City:
         self.masters = {}    # Dict el_id of route → el_id of route_master
         self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
         self.transfers = []  # List of lists of stations
-        self.station_ids = set()  # Set of stations' el_id
+        self.station_ids = set()  # Set of stations' uid
+        self.stops_and_platforms = set()  # Set of stops and platforms el_id
         self.errors = []
         self.warnings = []
 
@@ -337,13 +370,12 @@ class City:
         return result
 
     def log_message(self, message, el):
-        msg = '{}: {}'.format(self.name, message)
         if el:
             tags = el.get('tags', {})
-            msg += ' ({} {}, "{}")'.format(
+            message += ' ({} {}, "{}")'.format(
                 el['type'], el.get('id', el.get('ref')),
                 tags.get('name', tags.get('ref', '')))
-        return msg
+        return message
 
     def warn(self, message, el=None):
         msg = self.log_message(message, el)
@@ -367,6 +399,7 @@ class City:
         return len(self.errors) == 0
 
     def extract_routes(self):
+        # Extract stations
         for el in self.elements.values():
             if Station.is_station(el):
                 s_id = el_id(el)
@@ -378,11 +411,20 @@ class City:
                     stations = [Station(el, self)]
 
                 for station in stations:
-                    self.station_ids.add(station.id)
-                    for st_el in station.elements:
-                        # TODO: Check for duplicates for platforms and stops?
-                        self.stations[st_el].append(station)
+                    if station.id not in self.station_ids:
+                        self.station_ids.add(station.id)
+                        for st_el in station.get_elements():
+                            self.stations[st_el].append(station)
 
+                        # Check that stops and platforms belong to single stop_area
+                        for sp in station.stops_and_platforms:
+                            if sp in self.stops_and_platforms:
+                                self.warn('A stop or a platform {} belongs to multiple '
+                                          'stations, might be correct'.format(sp))
+                            else:
+                                self.stops_and_platforms.add(sp)
+
+        # Extract routes
         for el in self.elements.values():
             if Route.is_route(el):
                 if self.networks and Route.get_network(el) not in self.networks:
@@ -401,6 +443,7 @@ class City:
                 if len(self.routes[k]) == 0:
                     del self.routes[k]
 
+            # And while we're iterating over relations, find interchanges
             if (el['type'] == 'relation' and
                     el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
                 self.make_transfer(el)

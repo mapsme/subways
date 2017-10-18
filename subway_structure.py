@@ -502,7 +502,8 @@ def get_unused_entrances_geojson(elements):
                 el['tags'].get('railway') == 'subway_entrance'):
             if el_id(el) not in used_entrances:
                 geometry = {'type': 'Point', 'coordinates': el_center(el)}
-                properties = {k: v for k, v in el['tags'].items() if k != 'railway'}
+                properties = {k: v for k, v in el['tags'].items()
+                              if k not in ('railway', 'entrance')}
                 features.append({'type': 'Feature', 'geometry': geometry, 'properties': properties})
     return {'type': 'FeatureCollection', 'features': features}
 

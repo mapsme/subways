@@ -60,23 +60,6 @@ class CityData:
             s = s.replace('{='+k+'}', test_eq(self.data['num_'+k], 0))
         return s
 
-    def add_warning(self, msg):
-        self.warnings.append(msg)
-        self.data['num_warnings'] += 1
-
-    def add_error(self, msg):
-        for k, reg in CityData.REGEXPS:
-            m = reg.search(msg)
-            if m:
-                self.data[k+'_found'] = int(m[1])
-                self.data[k+'_expected'] = int(m[2])
-        m = re.search(r'Found (\d+) unused subway e', msg)
-        if m:
-            self.data['unused_entrances'] = int(m[1])
-        self.errors.append(msg)
-        self.data['num_errors'] += 1
-        self.data['good_cities'] = 0
-
 
 def tmpl(s, data=None, **kwargs):
     if data:
@@ -93,14 +76,13 @@ def tmpl(s, data=None, **kwargs):
 EXPAND_OSM_TYPE = {'n': 'node', 'w': 'way', 'r': 'relation'}
 RE_SHORT = re.compile(r'([nwr])(\d+)')
 RE_FULL = re.compile(r'(node|way|relation) (\d+)')
-LOG_LINE = re.compile(r'^(\d\d:\d\d:\d\d)\s+([A-Z]+)\s+([^:]+):\s+(.+?)\s*$')
 
 
 def osm_links(s):
     """Converts object mentions to HTML links."""
     def link(m):
         return '<a href="https://www.openstreetmap.org/{}/{}">{}</a>'.format(
-            EXPAND_OSM_TYPE[m[1][0]], m[2], m[0])
+            EXPAND_OSM_TYPE[m.group(1)[0]], m.group(2), m.group(0))
     s = RE_SHORT.sub(link, s)
     s = RE_FULL.sub(link, s)
     return s

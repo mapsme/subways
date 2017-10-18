@@ -401,9 +401,9 @@ class City:
                 if len(self.routes[k]) == 0:
                     del self.routes[k]
 
-        if (el['type'] == 'relation' and
-                el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
-            self.make_transfer(el)
+            if (el['type'] == 'relation' and
+                    el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
+                self.make_transfer(el)
 
     def count_unused_entrances(self):
         global used_entrances

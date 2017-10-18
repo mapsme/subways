@@ -137,9 +137,9 @@ class Station:
                 found_entry |= e[0]
                 found_exit |= e[1]
             if not found_entry:
-                city.error('Only exits for a station, no entrances', el)
+                city.error('Only exits for a station, no entrances', stop_area or el)
             if not found_exit:
-                city.error('No exits for a station', el)
+                city.error('No exits for a station', stop_area or el)
 
     def get_elements(self):
         result = set([self.id, el_id(self.element)])
@@ -214,7 +214,9 @@ class Route:
                 if m['role'] in ('stop', 'platform'):
                     city.error('{} {} {} for route relation is not in the dataset'.format(
                         m['role'], m['type'], m['ref']), relation)
-                    raise Exception('Stop or platform is not in the dataset')
+                    raise Exception('Stop or platform {} {} in relation {} '
+                                    'is not in the dataset'.format(
+                                        m['type'], m['ref'], relation['id']))
                 continue
             el = city.elements[k]
             if 'tags' not in el:
@@ -314,7 +316,7 @@ class City:
         self.elements = {}   # Dict el_id → el
         self.stations = defaultdict(list)   # Dict el_id → list of stations
         self.routes = {}     # Dict route_ref → route
-        self.masters = {}    # Dict el_id of route → el_id of route_master
+        self.masters = {}    # Dict el_id of route → route_master
         self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
         self.transfers = []  # List of lists of stations
         self.station_ids = set()  # Set of stations' uid
@@ -340,7 +342,7 @@ class City:
                     if m['type'] == 'relation':
                         if el_id(m) in self.masters:
                             self.error('Route in two route_masters', m)
-                        self.masters[el_id(m)] = el_id(el)
+                        self.masters[el_id(m)] = el
             elif el['tags'].get('public_transport') == 'stop_area':
                 for m in el['members']:
                     stop_area = self.stop_areas[el_id(m)]
@@ -427,18 +429,27 @@ class City:
         # Extract routes
         for el in self.elements.values():
             if Route.is_route(el):
-                if self.networks and Route.get_network(el) not in self.networks:
-                    continue
+                route_id = el_id(el)
+                if self.networks:
+                    network = Route.get_network(el)
+                    if route_id in self.masters:
+                        master_network = Route.get_network(self.masters[route_id])
+                    else:
+                        master_network = None
+                    if network not in self.networks and master_network not in self.networks:
+                        continue
+
                 route = Route(el, self)
                 if route.id in self.masters:
-                    k = self.masters[route.id]
-                    master = self.elements.get(k, None)
+                    master = self.masters[route.id]
+                    k = el_id(master)
                 else:
-                    k = route.ref
                     master = None
+                    k = route.ref
                 if k not in self.routes:
                     self.routes[k] = RouteMaster(master)
                 self.routes[k].add(route, self)
+
                 # Sometimes adding a route to a newly initialized RouteMaster can fail
                 if len(self.routes[k]) == 0:
                     del self.routes[k]
@@ -505,7 +516,7 @@ class City:
             self.error('Found {} interchanges, expected {}'.format(
                 self.found_interchanges, self.num_interchanges))
         self.found_networks = len(networks)
-        if len(networks) > 1:
+        if len(networks) > max(1, len(self.networks)):
             n_str = '; '.join(['{} ({})'.format(k, v) for k, v in networks.items()])
             self.warn('More than one network: {}'.format(n_str))
 

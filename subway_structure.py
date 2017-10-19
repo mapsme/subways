@@ -299,6 +299,9 @@ class RouteMaster:
     def __get__(self, i):
         return self.routes[i]
 
+    def __iter__(self):
+        return iter(self.routes)
+
 
 class City:
     def __init__(self, row):
@@ -494,8 +497,9 @@ class City:
         unused_stations = set(self.station_ids)
         for rmaster in self.routes.values():
             networks[str(rmaster.network)] += 1
-            for st in rmaster.best.stops:
-                unused_stations.discard(st.id)
+            for route in rmaster:
+                for st in route.stops:
+                    unused_stations.discard(st.id)
         if unused_stations:
             self.unused_stations = len(unused_stations)
             self.warn('{} unused stations: {}'.format(

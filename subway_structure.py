@@ -112,6 +112,8 @@ class Station:
                         is_exit = (m_el['tags'].get('entrance') != 'entrance' and
                                    m['role'] != 'entry_only')
                         self.exits[k] = (is_entrance, is_exit)
+                    elif m_el['tags'].get('railway') in ['rail'] + list(MODES):
+                        city.error('Tracks in a stop_area relation', stop_area)
         else:
             # Otherwise add nearby entrances and stop positions
             center = el_center(el)
@@ -223,10 +225,10 @@ class Route:
                 city.error('Untagged object in a route', relation)
                 continue
             if m['role'] in ('stop', 'platform'):
-                if el['tags'].get('railway') in ('station', 'halt'):
-                    city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
-                elif 'construction' in el['tags'] or 'proposed' in el['tags']:
+                if 'construction' in el['tags'] or 'proposed' in el['tags']:
                     city.error('An under construction {} in route'.format(m['role']), el)
+                elif el['tags'].get('railway') in ('station', 'halt'):
+                    city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         m['role'], m['type'], m['ref']), relation)

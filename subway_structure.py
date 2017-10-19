@@ -349,7 +349,7 @@ class City:
                 for m in el['members']:
                     stop_area = self.stop_areas[el_id(m)]
                     if el in stop_area:
-                        self.warn('Duplicate element in a stop area', m)
+                        self.warn('Duplicate element in a stop area', el)
                     else:
                         stop_area.append(el)
 

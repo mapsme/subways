@@ -44,6 +44,13 @@ def distance(p1, p2):
     return 6378137 * math.sqrt(dx*dx + dy*dy)
 
 
+def format_elid_list(ids):
+    msg = ', '.join(list(ids)[:20])
+    if len(ids) > 20:
+        msg += ', ...'
+    return msg
+
+
 class Station:
     @staticmethod
     def get_mode(el):
@@ -86,6 +93,7 @@ class Station:
             city.warn('Station is not a node', el)
 
         self.id = el_id(stop_area) if stop_area else el_id(el)
+        self.is_stop_area = stop_area is not None
         self.element = el  # always railway=station
         self.stops_and_platforms = set()  # set of el_ids of platforms and stop_positions
         self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
@@ -479,18 +487,18 @@ class City:
             if (el['type'] == 'node' and 'tags' in el and
                     el['tags'].get('railway') == 'subway_entrance'):
                 i = el_id(el)
-                if i not in self.stations:
-                    unused.append(i)
-                else:
+                if i in self.stations:
                     used_entrances.add(i)
                 if i not in stop_areas:
                     not_in_sa.append(i)
+                    if i not in self.stations:
+                        unused.append(i)
         self.unused_entrances = len(unused)
+        self.entrances_not_in_stop_areas = len(not_in_sa)
         if unused:
-            list_unused = '' if len(unused) > 20 else ': ' + ', '.join(unused)
-            self.error('Found {} unused subway entrances{}'.format(len(unused), list_unused))
+            self.error('Found {} entrances not used in routes or stop_areas: {}'.format(
+                len(unused), format_elid_list(unused)))
         if not_in_sa:
-            self.entrances_not_in_stop_areas = len(not_in_sa)
             self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))
 
     def validate(self):
@@ -504,7 +512,7 @@ class City:
         if unused_stations:
             self.unused_stations = len(unused_stations)
             self.warn('{} unused stations: {}'.format(
-                self.unused_stations, ', '.join(unused_stations)))
+                self.unused_stations, format_elid_list(unused_stations)))
         self.count_unused_entrances()
         self.found_light_lines = len([x for x in self.routes.values() if x.mode != 'subway'])
         self.found_lines = len(self.routes) - self.found_light_lines

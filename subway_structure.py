@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
 MAX_DISTANCE_NEARBY = 150  # in meters
 MODES = ('subway', 'light_rail', 'monorail')
+ALLOWED_STATIONS_MISMATCH = 0.02  # part of total station count
 
 transfers = []
 used_entrances = set()
@@ -515,8 +516,13 @@ class City:
                 self.found_light_lines, self.num_light_lines))
         self.found_stations = len(self.station_ids) - len(unused_stations)
         if self.found_stations != self.num_stations:
-            self.error('Found {} stations in routes, expected {}'.format(
-                self.found_stations, self.num_stations))
+            msg = 'Found {} stations in routes, expected {}'.format(
+                self.found_stations, self.num_stations)
+            if (0 <= (self.num_stations - self.found_stations) / self.num_stations <=
+                    ALLOWED_STATIONS_MISMATCH):
+                self.warn(msg)
+            else:
+                self.error(msg)
         self.found_interchanges = len(self.transfers)
         if self.found_interchanges != self.num_interchanges:
             self.error('Found {} interchanges, expected {}'.format(

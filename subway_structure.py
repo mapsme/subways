@@ -112,7 +112,6 @@ class Station:
                     if Station.is_station(m_el):
                         if k != el_id(self.element):
                             city.error('Stop area has two stations', stop_area)
-                        self.stops_and_platforms.add(k)
                     elif Station.is_stop_or_platform(m_el):
                         self.stops_and_platforms.add(k)
                     elif m_el['tags'].get('railway') == 'subway_entrance':
@@ -194,6 +193,9 @@ class Route:
         self.mode = relation['tags']['route']
         self.rails = []
         self.stops = []
+        # Add circle_line=yes on a route to disable station order checking
+        # This is a hack, but few lines actually have repeating stops
+        is_circle = relation['tags'].get('circle_line') == 'yes'
         enough_stops = False
         for m in relation['members']:
             k = el_id(m)
@@ -208,7 +210,7 @@ class Route:
                         if st not in self.stops:
                             city.error('Inconsistent platform-stop "{}" in route'.format(st.name),
                                        relation)
-                    elif st not in self.stops:
+                    elif st not in self.stops or is_circle:
                         self.stops.append(st)
                         if self.mode != st.mode:
                             city.warn('{} station "{}" in {} route'.format(

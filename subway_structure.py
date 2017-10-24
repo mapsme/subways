@@ -156,14 +156,17 @@ class Station:
         cannot rely on a station node, since many stop_areas can share one.
         Basically it averages center points of all platforms
         and stop positions."""
-        self.center = [0, 0]
-        for sp in self.stops_and_platforms:
-            spc = el_center(city.elements[sp])
-            if spc:
-                for i in range(2):
-                    self.center[i] += spc[i]
-        for i in range(2):
-            self.center[i] /= len(self.stops_and_platforms)
+        if len(self.stops_and_platforms) == 0:
+            self.center = el_center(self.element)
+        else:
+            self.center = [0, 0]
+            for sp in self.stops_and_platforms:
+                spc = el_center(city.elements[sp])
+                if spc:
+                    for i in range(2):
+                        self.center[i] += spc[i]
+            for i in range(2):
+                self.center[i] /= len(self.stops_and_platforms)
 
     def get_elements(self):
         result = set([self.id, el_id(self.element)])

@@ -12,6 +12,27 @@ of metro maps.
 * Run `mapsme_subways.py -x filtered_data.osm` to build metro structures and receive a validation log.
 * Run `validation_to_html.py` on that log to create readable HTML tables.
 
+## Validation Script
+
+There is a `process_subways.sh` in the `scripts` directory. The author uses it for
+updating both the planet and a city he's working on. Here is an example of a script
+for updating the London Underground network:
+
+```bash
+PLANET_PATH=$HOME/osm/planet
+export PLANET="$PLANET_PATH/london.o5m"
+export HTML_DIR=tmp_html
+export BBOX=-0.681152,51.286758,0.334015,51.740636
+export CITY="London"
+export OSMCTOOLS="$PLANET_PATH"
+
+scripts/process_subways.sh
+```
+
+The bounding box can be found in the
+[Google Spreadsheet](https://docs.google.com/spreadsheets/d/1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8/edit?usp=sharing).
+If you are okay with rare updates, use [this website](http://osmz.ru/subways/).
+
 ## Adding Stop Areas To OSM
 
 To quickly add `stop_area` relations for the entire city, use the `make_stop_areas.py` script

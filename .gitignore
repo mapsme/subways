@@ -1,6 +1,8 @@
 __pycache__/
+tmp_html/
+html/
 *.log
 *.json
 *.geojson
 *.osm
-validate.sh
+*.swp

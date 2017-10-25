@@ -460,7 +460,7 @@ class City:
             if k not in self.stations:
                 return
             transfer.add(self.stations[k][0])
-        if transfer:
+        if len(transfer) > 1:
             self.transfers.append(transfer)
 
     def is_good(self):
@@ -526,6 +526,18 @@ class City:
             if (el['type'] == 'relation' and
                     el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
                 self.make_transfer(el)
+
+        # Filter transfers, leaving only stations that belong to routes
+        used_stop_areas = set()
+        for rmaster in self.routes.values():
+            for route in rmaster:
+                used_stop_areas.update(route.stops)
+        new_transfers = []
+        for transfer in self.transfers:
+            new_tr = [s for s in transfer if s in used_stop_areas]
+            if len(new_tr) > 1:
+                new_transfers.append(new_tr)
+        self.transfers = new_transfers
 
     def __iter__(self):
         return iter(self.routes.values())

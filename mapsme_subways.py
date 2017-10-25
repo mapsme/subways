@@ -141,22 +141,79 @@ def load_xml(f):
     return elements
 
 
-def mapsme_network(city):
-    routes = []
-    network = [{'network': 'TODO', 'agency_id': 12345, 'routes': routes}]
-    return network
+def dump_data(city, f):
+    def write_yaml(data, f, indent=''):
+        if isinstance(data, (set, list)):
+            f.write('\n')
+            for i in data:
+                f.write(indent)
+                f.write('- ')
+                write_yaml(i, f, indent + '  ')
+        elif isinstance(data, dict):
+            f.write('\n')
+            for k, v in data.items():
+                f.write(indent + str(k) + ': ')
+                write_yaml(v, f, indent + '  ')
+                if isinstance(v, (list, set, dict)):
+                    f.write('\n')
+        else:
+            f.write(data)
+            f.write('\n')
 
-
-def prepare_mapsme_data(transfers, networks):
     stops = set()
+    routes = []
+    for route in city:
+        routes = {
+            'type': route.mode,
+            'ref': route.ref,
+            'name': route.name,
+            'itineraries': []
+        }
+        for variant in route:
+            v_stops = ['{} ({})'.format(s.station.name, s.station.id) for s in variant]
+            routes['itineraries'].append(v_stops)
+            stops.update(v_stops)
+    transfers = []
+    for t in city.transfers:
+        v_stops = ['{} ({})'.format(s.name, s.id) for s in t]
+        transfers.append(v_stops)
+
+    result = {
+        'stops': sorted(stops),
+        'transfers': transfers,
+        'routes': routes,
+    }
+    write_yaml(result, f)
+
+
+def prepare_mapsme_data(transfers, cities):
+    stops = {}  # el_id -> station data
+    networks = []
+    for city in cities:
+        network = {'network': city.name, 'routes': []}
+        for route in city:
+            routes = {
+                'type': route.mode,
+                'ref': route.ref,
+                'name': route.name,
+                'route_id': 0,  # TODO
+                'itineraries': []
+            }
+            for variant in route:
+                stops = []
+                # TODO
+            network['routes'].append(routes)
+        networks.append(network)
     # TODO: prepare a set of all stations
-    result = {}
-    result['stops'] = list(stops)
-    result['transfers'] = []
+    c_transfers = []
     for t in transfers:
         # TODO: decouple transfers and add travel time
         pass
-    result['networks'] = sum(networks, [])
+    result = {
+        'stops': list(stops.values()),
+        'transfers': c_transfers,
+        'networks': networks
+    }
     return result
 
 
@@ -174,14 +231,17 @@ if __name__ == '__main__':
                         help='Export unused subway entrances as GeoJSON here')
     parser.add_argument('-l', '--log', type=argparse.FileType('w'),
                         help='Validation JSON file name')
-    parser.add_argument('-o', '--output', help='JSON file for MAPS.ME')
+    parser.add_argument('-o', '--output', type=argparse.FileType('w'),
+                        help='JSON file for MAPS.ME')
+    parser.add_argument('-d', '--dump', type=argparse.FileType('w'),
+                        help='Make a YAML file for a city data')
     options = parser.parse_args()
 
     if options.quiet:
         log_level = logging.WARNING
     else:
         log_level = logging.INFO
-    logging.basicConfig(level=logging.INFO, datefmt='%H:%M:%S',
+    logging.basicConfig(level=log_level, datefmt='%H:%M:%S',
                         format='%(asctime)s %(levelname)-7s  %(message)s')
 
     # Downloading cities from Google Spreadsheets
@@ -243,8 +303,9 @@ if __name__ == '__main__':
     if options.entrances:
         json.dump(get_unused_entrances_geojson(osm), options.entrances)
 
+    if options.dump:
+        dump_data(cities[0], options.dump)
+
     # Finally, prepare a JSON file for MAPS.ME
     if options.output:
-        networks = [mapsme_network(c) for c in good_cities]
-        with open(options.output, 'w') as f:
-            json.dump(prepare_mapsme_data(transfers, networks), f)
+        json.dump(prepare_mapsme_data(transfers, good_cities), options.output)

@@ -71,17 +71,7 @@ class Station:
             return False
         return True
 
-    @staticmethod
-    def is_stop_or_platform(el):
-        if 'tags' not in el:
-            return False
-        if el['tags'].get('railway') == 'platform':
-            return True
-        if el['tags'].get('public_transport') in ('platform', 'stop_position'):
-            return True
-        return False
-
-    def __init__(self, el, city, stop_area=None):
+    def __init__(self, el, city):
         """Call this with a railway=station node."""
         if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             raise Exception(
@@ -92,28 +82,58 @@ class Station:
         if el['type'] != 'node':
             city.warn('Station is not a node', el)
 
-        self.id = el_id(stop_area) if stop_area else el_id(el)
-        self.is_stop_area = stop_area is not None
-        self.element = el  # always railway=station
+        self.id = el_id(el)
+        self.element = el
+        self.mode = Station.get_mode(el)
+        self.name = el['tags'].get('name', '?')
+        self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
+        self.colour = el['tags'].get('colour', None)
+        self.center = el_center(el)
+        if self.center is None:
+            raise Exception('Could not find center of {}'.format(el))
+
+
+class StopArea:
+    @staticmethod
+    def is_stop_or_platform(el):
+        if 'tags' not in el:
+            return False
+        if el['tags'].get('railway') == 'platform':
+            return True
+        if el['tags'].get('public_transport') in ('platform', 'stop_position'):
+            return True
+        return False
+
+    def __init__(self, station, city, stop_area=None):
+        """Call this with a Station object."""
+
+        self.id = el_id(stop_area) if stop_area else station.id
+        self.stop_area = stop_area
+        self.station = station
         self.stops_and_platforms = set()  # set of el_ids of platforms and stop_positions
         self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
         self.center = None  # lon, lat of the station centre point
 
-        self.mode = Station.get_mode(el)
-        self.name = el['tags'].get('name', 'Unknown')
-        self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
-        self.colour = el['tags'].get('colour', None)
+        self.mode = station.mode
+        self.name = station.name
+        self.int_name = station.int_name
+        self.colour = station.colour
 
         if stop_area:
+            self.name = stop_area['tags'].get('name', self.name)
+            self.int_name = stop_area['tags'].get(
+                'int_name', stop_area['tags'].get('name:en', self.int_name))
+            self.colour = stop_area['tags'].get('colour', self.colour)
+
             # If we have a stop area, add all elements from it
             for m in stop_area['members']:
                 k = el_id(m)
                 m_el = city.elements.get(k)
                 if m_el and 'tags' in m_el:
                     if Station.is_station(m_el):
-                        if k != el_id(self.element):
+                        if k != station.id:
                             city.error('Stop area has two stations', stop_area)
-                    elif Station.is_stop_or_platform(m_el):
+                    elif StopArea.is_stop_or_platform(m_el):
                         self.stops_and_platforms.add(k)
                     elif m_el['tags'].get('railway') == 'subway_entrance':
                         is_entrance = (m_el['tags'].get('entrance') != 'exit' and
@@ -125,14 +145,12 @@ class Station:
                         city.error('Tracks in a stop_area relation', stop_area)
         else:
             # Otherwise add nearby entrances and stop positions
-            center = el_center(el)
-            if center is None:
-                raise Exception('Could not find center of {}'.format(el))
+            center = station.center
             for c_el in city.elements.values():
                 c_center = el_center(c_el)
                 if 'tags' not in c_el or not c_center:
                     continue
-                if Station.is_stop_or_platform(c_el):
+                if StopArea.is_stop_or_platform(c_el):
                     # Take care to not add other stations
                     if 'station' not in c_el['tags']:
                         if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
@@ -148,16 +166,16 @@ class Station:
                 found_entry |= e[0]
                 found_exit |= e[1]
             if not found_entry:
-                city.error('Only exits for a station, no entrances', stop_area or el)
+                city.error('Only exits for a station, no entrances', stop_area or station.element)
             if not found_exit:
-                city.error('No exits for a station', stop_area or el)
+                city.error('No exits for a station', stop_area or station.element)
 
         """Calculates the center point of the station. This algorithm
         cannot rely on a station node, since many stop_areas can share one.
         Basically it averages center points of all platforms
         and stop positions."""
         if len(self.stops_and_platforms) == 0:
-            self.center = el_center(self.element)
+            self.center = station.center
         else:
             self.center = [0, 0]
             for sp in self.stops_and_platforms:
@@ -169,7 +187,7 @@ class Station:
                 self.center[i] /= len(self.stops_and_platforms)
 
     def get_elements(self):
-        result = set([self.id, el_id(self.element)])
+        result = set([self.id, self.station.id])
         result.update(self.exits.keys())
         result.update(self.stops_and_platforms)
         return result
@@ -203,6 +221,7 @@ class Route:
         if 'ref' not in relation['tags']:
             city.warn('Missing ref on a route', relation)
         self.ref = relation['tags'].get('ref', relation['tags'].get('name', None))
+        self.name = relation['tags'].get('name', None)
         if 'colour' not in relation['tags']:
             city.warn('Missing colour on a route', relation)
         self.colour = relation['tags'].get('colour', None)
@@ -275,6 +294,15 @@ class Route:
                 city.warn('Hole in route rails near node {}'.format(self.rails[i][0]), relation)
                 break
 
+    def __len__(self):
+        return len(self.stops)
+
+    def __get__(self, i):
+        return self.stops[i]
+
+    def __iter__(self):
+        return iter(self.stops)
+
 
 class RouteMaster:
     def __init__(self, master=None):
@@ -285,11 +313,13 @@ class RouteMaster:
             self.colour = master['tags'].get('colour', None)
             self.network = Route.get_network(master)
             self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
+            self.name = master['tags'].get('name', None)
         else:
             self.ref = None
             self.colour = None
             self.network = None
             self.mode = None
+            self.name = None
 
     def add(self, route, city):
         if not self.network:
@@ -309,6 +339,9 @@ class RouteMaster:
         elif route.ref != self.ref:
             city.warn('Route "{}" has different ref from master "{}"'.format(
                 route.ref, self.ref), route.element)
+
+        if not self.name:
+            self.name = route.name
 
         if not self.mode:
             self.mode = route.mode
@@ -347,11 +380,11 @@ class City:
         else:
             self.bbox = None
         self.elements = {}   # Dict el_id → el
-        self.stations = defaultdict(list)   # Dict el_id → list of stations
+        self.stations = defaultdict(list)   # Dict el_id → list of stop areas
         self.routes = {}     # Dict route_ref → route
         self.masters = {}    # Dict el_id of route → route_master
         self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
-        self.transfers = []  # List of lists of stations
+        self.transfers = []  # List of lists of stop areas
         self.station_ids = set()  # Set of stations' uid
         self.stops_and_platforms = set()  # Set of stops and platforms el_id
         self.errors = []
@@ -435,19 +468,21 @@ class City:
 
     def extract_routes(self):
         # Extract stations
+        processed_stop_areas = set()
         for el in self.elements.values():
             if Station.is_station(el):
-                s_id = el_id(el)
-                if s_id in self.stop_areas:
+                st = Station(el, self)
+                self.station_ids.add(st.id)
+                if st.id in self.stop_areas:
                     stations = []
-                    for sa in self.stop_areas[s_id]:
-                        stations.append(Station(el, self, sa))
+                    for sa in self.stop_areas[st.id]:
+                        stations.append(StopArea(st, self, sa))
                 else:
-                    stations = [Station(el, self)]
+                    stations = [StopArea(st, self)]
 
                 for station in stations:
-                    if station.id not in self.station_ids:
-                        self.station_ids.add(station.id)
+                    if station.id not in processed_stop_areas:
+                        processed_stop_areas.add(station.id)
                         for st_el in station.get_elements():
                             self.stations[st_el].append(station)
 
@@ -492,6 +527,9 @@ class City:
                     el.get('tags', {}).get('public_transport', None) == 'stop_area_group'):
                 self.make_transfer(el)
 
+    def __iter__(self):
+        return iter(self.routes.values())
+
     def count_unused_entrances(self):
         global used_entrances
         stop_areas = set()
@@ -527,7 +565,7 @@ class City:
             networks[str(rmaster.network)] += 1
             for route in rmaster:
                 for st in route.stops:
-                    unused_stations.discard(st.id)
+                    unused_stations.discard(st.station.id)
         if unused_stations:
             self.unused_stations = len(unused_stations)
             self.warn('{} unused stations: {}'.format(

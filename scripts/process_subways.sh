@@ -11,6 +11,7 @@ if [ $# -lt 1 -a -z "${PLANET-}" ]; then
   echo "- PLANET: path for the source o5m file (the entire planet or an extract)"
   echo "- CITY: name of a city to process"
   echo "- BBOX: bounding box of an extract; x1,y1,x2,y2"
+  echo "- DUMP: file name to dump city data"
   echo "- OSMCTOOLS: path to osmconvert and osmupdate binaries"
   echo "- PYTHON: python 3 executable"
   echo "- GIT_PULL: set to 1 to update the scripts"
@@ -56,8 +57,7 @@ if [ -n "${GIT_PULL-}" ]; then (
 PLANET_ABS="$(cd "$(dirname "$PLANET")"; pwd)/$(basename "$PLANET")"
 (
   cd "$OSMCTOOLS" # osmupdate requires osmconvert in a current directory
-  ./osmupdate --drop-author --drop-version --out-o5m "$PLANET_ABS" ${BBOX+"-b=$BBOX"} "$PLANET_ABS.new.o5m"
-  mv "$PLANET_ABS.new.o5m" "$PLANET_ABS"
+  ./osmupdate --drop-author --drop-version --out-o5m "$PLANET_ABS" ${BBOX+"-b=$BBOX"} "$PLANET_ABS.new.o5m" && mv "$PLANET_ABS.new.o5m" "$PLANET_ABS" || true
 )
 
 # Filtering it
@@ -70,7 +70,7 @@ QNODES="station=subway =light_rail =monorail railway=subway_entrance subway=yes 
 # Running the validation
 
 VALIDATION="$TMPDIR/validation.json"
-"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${CITY+-c "$CITY"}
+"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${CITY+-c "$CITY"${DUMP+ -d "$DUMP"}}
 rm "$FILTERED_DATA"
 
 # Preparing HTML files

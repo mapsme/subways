@@ -7,9 +7,10 @@ from collections import Counter, defaultdict
 
 
 SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
-MAX_DISTANCE_NEARBY = 150  # in meters
 MODES = ('subway', 'light_rail', 'monorail')
-ALLOWED_STATIONS_MISMATCH = 0.02  # part of total station count
+MAX_DISTANCE_NEARBY = 150  # in meters
+ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
+ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
 
 transfers = []
 used_entrances = set()
@@ -583,6 +584,7 @@ class City:
             self.warn('{} unused stations: {}'.format(
                 self.unused_stations, format_elid_list(unused_stations)))
         self.count_unused_entrances()
+
         self.found_light_lines = len([x for x in self.routes.values() if x.mode != 'subway'])
         self.found_lines = len(self.routes) - self.found_light_lines
         if self.found_lines != self.num_lines:
@@ -591,6 +593,7 @@ class City:
         if self.found_light_lines != self.num_light_lines:
             self.error('Found {} light rail lines, expected {}'.format(
                 self.found_light_lines, self.num_light_lines))
+
         self.found_stations = len(self.station_ids) - len(unused_stations)
         if self.found_stations != self.num_stations:
             msg = 'Found {} stations in routes, expected {}'.format(
@@ -600,10 +603,17 @@ class City:
                 self.warn(msg)
             else:
                 self.error(msg)
+
         self.found_interchanges = len(self.transfers)
         if self.found_interchanges != self.num_interchanges:
-            self.error('Found {} interchanges, expected {}'.format(
-                self.found_interchanges, self.num_interchanges))
+            msg = 'Found {} interchanges, expected {}'.format(
+                self.found_interchanges, self.num_interchanges)
+            if (0 <= (self.num_interchanges - self.found_interchanges) / self.num_interchanges <=
+                    ALLOWED_TRANSFERS_MISMATCH):
+                self.warn(msg)
+            else:
+                self.error(msg)
+
         self.found_networks = len(networks)
         if len(networks) > max(1, len(self.networks)):
             n_str = '; '.join(['{} ({})'.format(k, v) for k, v in networks.items()])

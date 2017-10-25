@@ -608,8 +608,9 @@ class City:
         if self.found_interchanges != self.num_interchanges:
             msg = 'Found {} interchanges, expected {}'.format(
                 self.found_interchanges, self.num_interchanges)
-            if (0 <= (self.num_interchanges - self.found_interchanges) / self.num_interchanges <=
-                    ALLOWED_TRANSFERS_MISMATCH):
+            if (self.num_interchanges == 0 or
+                    (0 <= (self.num_interchanges - self.found_interchanges) /
+                     self.num_interchanges <= ALLOWED_TRANSFERS_MISMATCH)):
                 self.warn(msg)
             else:
                 self.error(msg)

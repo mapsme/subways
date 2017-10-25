@@ -163,7 +163,7 @@ def dump_data(city, f):
     stops = set()
     routes = []
     for route in city:
-        routes = {
+        rte = {
             'type': route.mode,
             'ref': route.ref,
             'name': route.name,
@@ -171,17 +171,18 @@ def dump_data(city, f):
         }
         for variant in route:
             v_stops = ['{} ({})'.format(s.station.name, s.station.id) for s in variant]
-            routes['itineraries'].append(v_stops)
+            rte['itineraries'].append(v_stops)
             stops.update(v_stops)
+        routes.append(rte)
     transfers = []
     for t in city.transfers:
         v_stops = ['{} ({})'.format(s.name, s.id) for s in t]
         transfers.append(v_stops)
 
     result = {
-        'stops': sorted(stops),
+        'stations': sorted(stops),
         'transfers': transfers,
-        'routes': routes,
+        'routes': sorted(routes, key=lambda r: r['ref']),
     }
     write_yaml(result, f)
 

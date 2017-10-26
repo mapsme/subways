@@ -170,7 +170,13 @@ def dump_data(city, f):
             'itineraries': []
         }
         for variant in route:
-            v_stops = ['{} ({})'.format(s.station.name, s.station.id) for s in variant]
+            v_stops = []
+            for s in variant:
+                if s.id == s.station.id:
+                    v_stops.append('{} ({})'.format(s.station.name, s.station.id))
+                else:
+                    v_stops.append('{} ({}) in {} ({})'.format(s.station.name, s.station.id,
+                                                               s.name, s.id))
             rte['itineraries'].append(v_stops)
             stops.update(v_stops)
         routes.append(rte)
@@ -249,9 +255,10 @@ if __name__ == '__main__':
     cities = download_cities()
     if options.city:
         cities = [c for c in cities if c.name == options.city]
-    logging.info('Read %s metro networks', len(cities))
     if not cities:
+        logging.error('No cities to process')
         sys.exit(2)
+    logging.info('Read %s metro networks', len(cities))
 
     # Reading cached json, loading XML or querying Overpass API
     if options.source and os.path.exists(options.source):

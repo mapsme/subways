@@ -127,13 +127,14 @@ class StopArea:
             self.colour = stop_area['tags'].get('colour', self.colour)
 
             # If we have a stop area, add all elements from it
+            warned_about_tracks = False
             for m in stop_area['members']:
                 k = el_id(m)
                 m_el = city.elements.get(k)
                 if m_el and 'tags' in m_el:
                     if Station.is_station(m_el):
                         if k != station.id:
-                            city.error('Stop area has two stations', stop_area)
+                            city.error('Stop area has multiple stations', stop_area)
                     elif StopArea.is_stop_or_platform(m_el):
                         self.stops_and_platforms.add(k)
                     elif m_el['tags'].get('railway') == 'subway_entrance':
@@ -143,7 +144,9 @@ class StopArea:
                                    m['role'] != 'entry_only')
                         self.exits[k] = (is_entrance, is_exit)
                     elif m_el['tags'].get('railway') in ['rail'] + list(MODES):
-                        city.error('Tracks in a stop_area relation', stop_area)
+                        if not warned_about_tracks:
+                            city.error('Tracks in a stop_area relation', stop_area)
+                            warned_about_tracks = True
         else:
             # Otherwise add nearby entrances and stop positions
             center = station.center
@@ -459,9 +462,8 @@ class City:
         transfer = set()
         for m in sag['members']:
             k = el_id(m)
-            if k not in self.stations:
-                return
-            transfer.add(self.stations[k][0])
+            if k in self.stations:
+                transfer.add(self.stations[k][0])
         if len(transfer) > 1:
             self.transfers.append(transfer)
 

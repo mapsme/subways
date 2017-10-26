@@ -6,3 +6,4 @@ html/
 *.geojson
 *.osm
 *.swp
+*.yaml

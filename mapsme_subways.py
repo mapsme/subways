@@ -160,6 +160,7 @@ def dump_data(city, f):
             f.write(data)
             f.write('\n')
 
+    INCLUDE_STOP_AREAS = False
     stops = set()
     routes = []
     for route in city:
@@ -170,13 +171,16 @@ def dump_data(city, f):
             'itineraries': []
         }
         for variant in route:
-            v_stops = []
-            for s in variant:
-                if s.id == s.station.id:
-                    v_stops.append('{} ({})'.format(s.station.name, s.station.id))
-                else:
-                    v_stops.append('{} ({}) in {} ({})'.format(s.station.name, s.station.id,
-                                                               s.name, s.id))
+            if INCLUDE_STOP_AREAS:
+                v_stops = []
+                for s in variant:
+                    if s.id == s.station.id:
+                        v_stops.append('{} ({})'.format(s.station.name, s.station.id))
+                    else:
+                        v_stops.append('{} ({}) in {} ({})'.format(s.station.name, s.station.id,
+                                                                   s.name, s.id))
+            else:
+                v_stops = ['{} ({})'.format(s.station.name, s.station.id) for s in variant]
             rte['itineraries'].append(v_stops)
             stops.update(v_stops)
         routes.append(rte)

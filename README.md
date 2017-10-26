@@ -20,11 +20,12 @@ for updating the London Underground network:
 
 ```bash
 PLANET_PATH=$HOME/osm/planet
+export OSMCTOOLS="$PLANET_PATH"
 export PLANET="$PLANET_PATH/london.o5m"
 export HTML_DIR=tmp_html
 export BBOX=-0.681152,51.286758,0.334015,51.740636
 export CITY="London"
-export OSMCTOOLS="$PLANET_PATH"
+export DUMP=london.yaml
 
 scripts/process_subways.sh
 ```

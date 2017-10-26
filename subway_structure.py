@@ -54,13 +54,13 @@ def format_elid_list(ids):
 
 class Station:
     @staticmethod
-    def get_mode(el):
+    def get_modes(el):
         mode = el['tags'].get('station')
-        if not mode:
-            for m in MODES:
-                if el['tags'].get(m) == 'yes':
-                    mode = m
-        return mode
+        modes = [] if not mode else [mode]
+        for m in MODES:
+            if el['tags'].get(m) == 'yes':
+                modes.append(m)
+        return set(modes)
 
     @staticmethod
     def is_station(el):
@@ -68,7 +68,7 @@ class Station:
             return False
         if 'construction' in el['tags'] or 'proposed' in el['tags']:
             return False
-        if Station.get_mode(el) not in MODES:
+        if Station.get_modes(el).isdisjoint(MODES):
             return False
         return True
 
@@ -85,7 +85,7 @@ class Station:
 
         self.id = el_id(el)
         self.element = el
-        self.mode = Station.get_mode(el)
+        self.modes = Station.get_modes(el)
         self.name = el['tags'].get('name', '?')
         self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
         self.colour = el['tags'].get('colour', None)
@@ -115,7 +115,7 @@ class StopArea:
         self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
         self.center = None  # lon, lat of the station centre point
 
-        self.mode = station.mode
+        self.modes = station.modes
         self.name = station.name
         self.int_name = station.int_name
         self.colour = station.colour
@@ -249,9 +249,9 @@ class Route:
                                        relation)
                     elif st not in self.stops or is_circle:
                         self.stops.append(st)
-                        if self.mode != st.mode:
+                        if self.mode not in st.modes:
                             city.warn('{} station "{}" in {} route'.format(
-                                st.mode, st.name, self.mode), relation)
+                                st.modes, st.name, self.mode), relation)
                     elif self.stops[0] == st and not enough_stops:
                         enough_stops = True
                     else:
@@ -396,8 +396,9 @@ class City:
         if center:
             return (self.bbox[0] <= center[1] <= self.bbox[2] and
                     self.bbox[1] <= center[0] <= self.bbox[3])
-        # Default is True, so we put elements w/o coords in all cities
-        return True
+        if 'tags' not in el:
+            return False
+        return 'route_master' in el['tags'] or 'public_transport' in el['tags']
 
     def add(self, el):
         if el['type'] == 'relation' and 'members' not in el:

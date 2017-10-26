@@ -415,10 +415,13 @@ class City:
                             self.error('Route in two route_masters', m)
                         self.masters[el_id(m)] = el
             elif el['tags'].get('public_transport') == 'stop_area':
+                warned_about_duplicates = False
                 for m in el['members']:
                     stop_area = self.stop_areas[el_id(m)]
                     if el in stop_area:
-                        self.warn('Duplicate element in a stop area', el)
+                        if not warned_about_duplicates:
+                            self.warn('Duplicate element in a stop area', el)
+                            warned_about_duplicates = True
                     else:
                         stop_area.append(el)
 

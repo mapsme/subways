@@ -237,7 +237,7 @@ if __name__ == '__main__':
         '-b', '--bbox', action='store_true',
         help='Use city boundaries to query Overpass API instead of querying the world')
     parser.add_argument('-q', '--quiet', action='store_true', help='Show only warnings and errors')
-    parser.add_argument('-c', '--city', help='Validate only a single city')
+    parser.add_argument('-c', '--city', help='Validate only a single city or a country')
     parser.add_argument('-e', '--entrances', type=argparse.FileType('w'),
                         help='Export unused subway entrances as GeoJSON here')
     parser.add_argument('-l', '--log', type=argparse.FileType('w'),
@@ -258,7 +258,7 @@ if __name__ == '__main__':
     # Downloading cities from Google Spreadsheets
     cities = download_cities()
     if options.city:
-        cities = [c for c in cities if c.name == options.city]
+        cities = [c for c in cities if c.name == options.city or c.country == options.city]
     if not cities:
         logging.error('No cities to process')
         sys.exit(2)

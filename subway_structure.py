@@ -254,7 +254,7 @@ class Route:
                         self.stops.append(st)
                         if self.mode not in st.modes:
                             city.warn('{} station "{}" in {} route'.format(
-                                st.modes, st.name, self.mode), relation)
+                                '+'.join(st.modes), st.name, self.mode), relation)
                     elif self.stops[0] == st and not enough_stops:
                         enough_stops = True
                     else:

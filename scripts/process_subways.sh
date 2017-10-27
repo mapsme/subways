@@ -82,7 +82,7 @@ if [ -z "${HTML_DIR-}" ]; then
 fi
 
 mkdir -p $HTML_DIR
-rm -f $HTML_DIR/*
+rm -f "$HTML_DIR"/*.html
 "$PYTHON" "$SUBWAYS_PATH/validation_to_html.py" "$VALIDATION" "$HTML_DIR"
 rm "$VALIDATION"
 

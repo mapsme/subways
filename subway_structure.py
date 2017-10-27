@@ -18,6 +18,8 @@ used_entrances = set()
 
 
 def el_id(el):
+    if not el:
+        return None
     if 'type' not in el:
         raise Exception('What is this element? {}'.format(el))
     return el['type'][0] + str(el.get('id', el.get('ref', '')))
@@ -117,6 +119,7 @@ class StopArea:
         self.exits = set()  # el_id of subway_entrance for leaving the platform
         self.entrances = set()  # el_id of subway_entrance for entering the platform
         self.center = None  # lon, lat of the station centre point
+        self.centers = {}  # el_id -> (lon, lat) for all elements
 
         self.modes = station.modes
         self.name = station.name
@@ -195,6 +198,9 @@ class StopArea:
             for i in range(2):
                 self.center[i] /= len(self.stops_and_platforms)
 
+        for el in self.get_elements():
+            self.centers[el] = el_center(city.elements[el])
+
     def get_elements(self):
         result = set([self.id, self.station.id])
         result.update(self.entrances)
@@ -240,9 +246,9 @@ class Route:
         self.mode = relation['tags']['route']
         self.rails = []
         self.stops = []
-        # Add circle_line=yes on a route to disable station order checking
+        # Add circular=yes on a route to disable station order checking
         # This is a hack, but few lines actually have repeating stops
-        is_circle = relation['tags'].get('circle_line') == 'yes'
+        is_circle = relation['tags'].get('circular') == 'yes'
         enough_stops = False
         for m in relation['members']:
             k = el_id(m)
@@ -321,6 +327,8 @@ class RouteMaster:
     def __init__(self, master=None):
         self.routes = []
         self.best = None
+        self.id = el_id(master)
+        self.has_master = master is not None
         if master:
             self.ref = master['tags'].get('ref', master['tags'].get('name', None))
             self.colour = master['tags'].get('colour', None)
@@ -362,6 +370,9 @@ class RouteMaster:
             city.error('Incompatible PT mode: master has {} and route has {}'.format(
                 self.mode, route.mode), route.element)
             return
+
+        if not self.has_master and (not self.id or self.id > route.id):
+            self.id = route.id
 
         self.routes.append(route)
         if not self.best or len(route.stops) > len(self.best.stops):
@@ -655,10 +666,9 @@ def find_transfers(elements, cities):
         for m in sag['members']:
             k = el_id(m)
             if k not in stations:
-                transfer = None
-                break
+                continue
             transfer.update(stations[k])
-        if transfer:
+        if len(transfer) > 1:
             transfers.append(transfer)
     return transfers
 

@@ -197,31 +197,80 @@ def dump_data(city, f):
     write_yaml(result, f)
 
 
+OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
+
+
 def prepare_mapsme_data(transfers, cities):
+    def uid(elid, typ=None):
+        t = elid[0]
+        osm_id = int(elid[1:])
+        if not typ:
+            osm_id = osm_id << 2 + OSM_TYPES[t][0]
+        elif typ != t:
+            raise Exception('Got {}, expected {}'.format(elid, typ))
+        return osm_id << 1
+
     stops = {}  # el_id -> station data
     networks = []
     for city in cities:
-        network = {'network': city.name, 'routes': []}
+        agency_id = 0  # TODO
+        network = {'network': city.name, 'routes': [], 'agency_id': agency_id}
         for route in city:
             routes = {
                 'type': route.mode,
                 'ref': route.ref,
                 'name': route.name,
-                'route_id': 0,  # TODO
+                'route_id': uid(route.id, 'r'),
                 'itineraries': []
             }
             for variant in route:
-                stops = []
-                # TODO
+                itin = []
+                for stop in variant:
+                    stop.mapsme_uid = uid(stop.id)
+                    stops[stop.id] = stop
+                    itin.append(stop.mapsme_uid)
+                routes['itineraries'].append({'stops': itin})
             network['routes'].append(routes)
         networks.append(network)
-    # TODO: prepare a set of all stations
+
+    m_stops = []
+    for stop in stops.values():
+        st = {
+            'name': stop.name,
+            'int_name': stop.int_name,
+            'lat': stop.center[1],
+            'lon': stop.center[0],
+            'osm_type': OSM_TYPES[stop.id[0]][1],
+            'osm_id': int(stop.id[1:]),
+            'id': stop.mapsme_uid,
+            'entrances': [],
+            'exits': [],
+        }
+        for e_l, k in ((stop.entrances, 'entrances'), (stop.exits, 'exits')):
+            for e in e_l:
+                if e[0] == 'n':
+                    st[k].append({
+                        'node_id': int(e[1:]),
+                        'lon': stop.centers[e][0],
+                        'lat': stop.centers[e][1],
+                        'distance': 60
+                    })
+        m_stops.append(st)
+
     c_transfers = []
-    for t in transfers:
-        # TODO: decouple transfers and add travel time
-        pass
+    for t_set in transfers:
+        t = list(t_set)
+        for t_first in range(len(t) - 1):
+            for t_second in range(t_first + 1, len(t)):
+                if t[t_first].id in stops and t[t_second].id in stops:
+                    c_transfers.append([
+                        uid(t[t_first].id),
+                        uid(t[t_second].id),
+                        60
+                    ])
+
     result = {
-        'stops': list(stops.values()),
+        'stops': m_stops,
         'transfers': c_transfers,
         'networks': networks
     }
@@ -323,4 +372,5 @@ if __name__ == '__main__':
 
     # Finally, prepare a JSON file for MAPS.ME
     if options.output:
-        json.dump(prepare_mapsme_data(transfers, good_cities), options.output)
+        json.dump(prepare_mapsme_data(transfers, good_cities), options.output,
+                  indent=1, ensure_ascii=False)

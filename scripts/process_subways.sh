@@ -12,6 +12,7 @@ if [ $# -lt 1 -a -z "${PLANET-}" ]; then
   echo "- CITY: name of a city to process"
   echo "- BBOX: bounding box of an extract; x1,y1,x2,y2"
   echo "- DUMP: file name to dump city data"
+  echo "- MAPSME: file name for maps.me json output"
   echo "- OSMCTOOLS: path to osmconvert and osmupdate binaries"
   echo "- PYTHON: python 3 executable"
   echo "- GIT_PULL: set to 1 to update the scripts"
@@ -70,7 +71,7 @@ QNODES="station=subway =light_rail =monorail railway=subway_entrance subway=yes 
 # Running the validation
 
 VALIDATION="$TMPDIR/validation.json"
-"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${CITY+-c "$CITY"${DUMP+ -d "$DUMP"}}
+"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${MAPSME+-o "$MAPSME"} ${CITY+-c "$CITY"${DUMP+ -d "$DUMP"}}
 rm "$FILTERED_DATA"
 
 # Preparing HTML files

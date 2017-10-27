@@ -40,7 +40,7 @@ class CityData:
 
     def __add__(self, other):
         d = CityData()
-        for k in self.data:
+        for k in set(self.data.keys()) | set(other.data.keys()):
             d.data[k] = self.data.get(k, 0) + other.data.get(k, 0)
         return d
 
@@ -109,11 +109,12 @@ for c in data.values():
     if c.continent not in c_by_c:
         c_by_c[c.continent] = set()
     c_by_c[c.continent].add(c.country)
+world = sum(continents.values(), CityData())
 
 date = datetime.datetime.now().strftime('%d.%m.%Y %H:%M')
 path = '.' if len(sys.argv) < 3 else sys.argv[2]
 index = open(os.path.join(path, 'index.html'), 'w', encoding='utf-8')
-index.write(tmpl(INDEX_HEADER))
+index.write(tmpl(INDEX_HEADER, world))
 
 for continent in sorted(continents.keys()):
     content = ''

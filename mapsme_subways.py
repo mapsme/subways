@@ -316,7 +316,10 @@ if __name__ == '__main__':
         json.dump(get_unused_entrances_geojson(osm), options.entrances)
 
     if options.dump:
-        dump_data(cities[0], options.dump)
+        if len(cities) == 1:
+            dump_data(cities[0], options.dump)
+        else:
+            logging.error('Cannot dump %s cities at once', len(cities))
 
     # Finally, prepare a JSON file for MAPS.ME
     if options.output:

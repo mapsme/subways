@@ -42,6 +42,7 @@ INDEX_HEADER = '''
 </head>
 <body>
 <h1>Subway Validation Results</h1>
+<p>Total good metro networks: {good_cities} of {total_cities}.</p>
 <table cellspacing="3" cellpadding="2" style="margin-bottom: 1em;">
 '''.replace('(s)', STYLE)
 

@@ -170,7 +170,7 @@ class StopArea:
                 elif c_el['tags'].get('railway') == 'subway_entrance':
                     if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
                         if c_el['type'] != 'node':
-                            city.warn('Subway entrance is not a node', m_el)
+                            city.warn('Subway entrance is not a node', c_el)
                         etag = c_el['tags'].get('entrance')
                         if etag != 'exit':
                             self.entrances.add(c_id)

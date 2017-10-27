@@ -11,6 +11,7 @@ MODES = ('subway', 'light_rail', 'monorail')
 MAX_DISTANCE_NEARBY = 150  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
+CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
 
 transfers = []
 used_entrances = set()
@@ -66,8 +67,9 @@ class Station:
     def is_station(el):
         if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             return False
-        if 'construction' in el['tags'] or 'proposed' in el['tags']:
-            return False
+        for k in CONSTRUCTION_KEYS:
+            if k in el['tags']:
+                return False
         if Station.get_modes(el).isdisjoint(MODES):
             return False
         return True
@@ -112,7 +114,8 @@ class StopArea:
         self.stop_area = stop_area
         self.station = station
         self.stops_and_platforms = set()  # set of el_ids of platforms and stop_positions
-        self.exits = {}  # el_id of subway_entrance -> (is_entrance, is_exit)
+        self.exits = set()  # el_id of subway_entrance for leaving the platform
+        self.entrances = set()  # el_id of subway_entrance for entering the platform
         self.center = None  # lon, lat of the station centre point
 
         self.modes = station.modes
@@ -138,11 +141,12 @@ class StopArea:
                     elif StopArea.is_stop_or_platform(m_el):
                         self.stops_and_platforms.add(k)
                     elif m_el['tags'].get('railway') == 'subway_entrance':
-                        is_entrance = (m_el['tags'].get('entrance') != 'exit' and
-                                       m['role'] != 'exit_only')
-                        is_exit = (m_el['tags'].get('entrance') != 'entrance' and
-                                   m['role'] != 'entry_only')
-                        self.exits[k] = (is_entrance, is_exit)
+                        if m_el['type'] != 'node':
+                            city.warn('Subway entrance is not a node', m_el)
+                        if m_el['tags'].get('entrance') != 'exit' and m['role'] != 'exit_only':
+                            self.entrances.add(k)
+                        if m_el['tags'].get('entrance') != 'entrance' and m['role'] != 'entry_only':
+                            self.exits.add(k)
                     elif m_el['tags'].get('railway') in ['rail'] + list(MODES):
                         if not warned_about_tracks:
                             city.error('Tracks in a stop_area relation', stop_area)
@@ -151,6 +155,7 @@ class StopArea:
             # Otherwise add nearby entrances and stop positions
             center = station.center
             for c_el in city.elements.values():
+                c_id = el_id(c_el)
                 c_center = el_center(c_el)
                 if 'tags' not in c_el or not c_center:
                     continue
@@ -158,21 +163,21 @@ class StopArea:
                     # Take care to not add other stations
                     if 'station' not in c_el['tags']:
                         if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
-                            self.stops_and_platforms.add(el_id(c_el))
+                            self.stops_and_platforms.add(c_id)
                 elif c_el['tags'].get('railway') == 'subway_entrance':
                     if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
+                        if c_el['type'] != 'node':
+                            city.warn('Subway entrance is not a node', m_el)
                         etag = c_el['tags'].get('entrance')
-                        self.exits[el_id(c_el)] = (etag != 'exit', etag != 'entrance')
+                        if etag != 'exit':
+                            self.entrances.add(c_id)
+                        if etag != 'entrance':
+                            self.exits.add(c_id)
 
-        if self.exits:
-            found_entry = found_exit = False
-            for e in self.exits.values():
-                found_entry |= e[0]
-                found_exit |= e[1]
-            if not found_entry:
-                city.error('Only exits for a station, no entrances', stop_area or station.element)
-            if not found_exit:
-                city.error('No exits for a station', stop_area or station.element)
+        if self.exits and not self.entrances:
+            city.error('Only exits for a station, no entrances', stop_area or station.element)
+        if self.entrances and not self.exits:
+            city.error('No exits for a station', stop_area or station.element)
 
         """Calculates the center point of the station. This algorithm
         cannot rely on a station node, since many stop_areas can share one.
@@ -192,7 +197,8 @@ class StopArea:
 
     def get_elements(self):
         result = set([self.id, self.station.id])
-        result.update(self.exits.keys())
+        result.update(self.entrances)
+        result.update(self.exits)
         result.update(self.stops_and_platforms)
         return result
 
@@ -207,8 +213,9 @@ class Route:
             return False
         if el['tags'].get('route') not in MODES:
             return False
-        if 'construction' in el['tags'] or 'proposed' in el['tags']:
-            return False
+        for k in CONSTRUCTION_KEYS:
+            if k in el['tags']:
+                return False
         if 'ref' not in el['tags'] and 'name' not in el['tags']:
             return False
         return True
@@ -276,9 +283,11 @@ class Route:
                 city.error('Untagged object in a route', relation)
                 continue
             if m['role'] in ('stop', 'platform'):
-                if 'construction' in el['tags'] or 'proposed' in el['tags']:
-                    city.error('An under construction {} in route'.format(m['role']), el)
-                elif el['tags'].get('railway') in ('station', 'halt'):
+                for k in CONSTRUCTION_KEYS:
+                    if k in el['tags']:
+                        city.error('An under construction {} in route'.format(m['role']), el)
+                        continue
+                if el['tags'].get('railway') in ('station', 'halt'):
                     city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(

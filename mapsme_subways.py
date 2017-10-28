@@ -173,14 +173,17 @@ def dump_data(city, f):
         for variant in route:
             if INCLUDE_STOP_AREAS:
                 v_stops = []
-                for s in variant:
+                for st in variant:
+                    s = st.stoparea
                     if s.id == s.station.id:
                         v_stops.append('{} ({})'.format(s.station.name, s.station.id))
                     else:
                         v_stops.append('{} ({}) in {} ({})'.format(s.station.name, s.station.id,
                                                                    s.name, s.id))
             else:
-                v_stops = ['{} ({})'.format(s.station.name, s.station.id) for s in variant]
+                v_stops = ['{} ({})'.format(
+                    s.stoparea.station.name,
+                    s.stoparea.station.id) for s in variant]
             rte['itineraries'].append(v_stops)
             stops.update(v_stops)
         routes.append(rte)
@@ -226,9 +229,8 @@ def prepare_mapsme_data(transfers, cities):
             for variant in route:
                 itin = []
                 for stop in variant:
-                    stop.mapsme_uid = uid(stop.id)
-                    stops[stop.id] = stop
-                    itin.append(stop.mapsme_uid)
+                    stops[stop.stoparea.id] = stop.stoparea
+                    itin.append(uid(stop.stoparea.id))
                 routes['itineraries'].append({'stops': itin})
             network['routes'].append(routes)
         networks.append(network)
@@ -242,7 +244,7 @@ def prepare_mapsme_data(transfers, cities):
             'lon': stop.center[0],
             'osm_type': OSM_TYPES[stop.id[0]][1],
             'osm_id': int(stop.id[1:]),
-            'id': stop.mapsme_uid,
+            'id': uid(stop.id),
             'entrances': [],
             'exits': [],
         }

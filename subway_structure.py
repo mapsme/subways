@@ -100,14 +100,32 @@ class Station:
 
 class StopArea:
     @staticmethod
-    def is_stop_or_platform(el):
+    def is_stop(el):
+        if 'tags' not in el:
+            return False
+        if el['tags'].get('railway') == 'stop':
+            return True
+        if el['tags'].get('public_transport') == 'stop_position':
+            return True
+        return False
+
+    @staticmethod
+    def is_platform(el):
         if 'tags' not in el:
             return False
         if el['tags'].get('railway') == 'platform':
             return True
-        if el['tags'].get('public_transport') in ('platform', 'stop_position'):
+        if el['tags'].get('public_transport') == 'platform':
             return True
         return False
+
+    @staticmethod
+    def is_track(el):
+        if el['type'] != 'way' or 'tags' not in el:
+            return False
+        if el['tags'].get('railway') == 'rail':
+            return True
+        return el['tags'].get('railway') in MODES
 
     def __init__(self, station, city, stop_area=None):
         """Call this with a Station object."""
@@ -115,7 +133,8 @@ class StopArea:
         self.id = el_id(stop_area) if stop_area else station.id
         self.stop_area = stop_area
         self.station = station
-        self.stops_and_platforms = set()  # set of el_ids of platforms and stop_positions
+        self.stops = set()  # set of el_ids of stop_positions
+        self.platforms = set()  # set of el_ids of platforms
         self.exits = set()  # el_id of subway_entrance for leaving the platform
         self.entrances = set()  # el_id of subway_entrance for entering the platform
         self.center = None  # lon, lat of the station centre point
@@ -141,8 +160,10 @@ class StopArea:
                     if Station.is_station(m_el):
                         if k != station.id:
                             city.error('Stop area has multiple stations', stop_area)
-                    elif StopArea.is_stop_or_platform(m_el):
-                        self.stops_and_platforms.add(k)
+                    elif StopArea.is_stop(m_el):
+                        self.stops.add(k)
+                    elif StopArea.is_platform(m_el):
+                        self.platforms.add(k)
                     elif m_el['tags'].get('railway') == 'subway_entrance':
                         if m_el['type'] != 'node':
                             city.warn('Subway entrance is not a node', m_el)
@@ -150,7 +171,7 @@ class StopArea:
                             self.entrances.add(k)
                         if m_el['tags'].get('entrance') != 'entrance' and m['role'] != 'entry_only':
                             self.exits.add(k)
-                    elif m_el['tags'].get('railway') in ['rail'] + list(MODES):
+                    elif StopArea.is_track(m_el):
                         if not warned_about_tracks:
                             city.error('Tracks in a stop_area relation', stop_area)
                             warned_about_tracks = True
@@ -162,11 +183,16 @@ class StopArea:
                 c_center = el_center(c_el)
                 if 'tags' not in c_el or not c_center:
                     continue
-                if StopArea.is_stop_or_platform(c_el):
+                if 'station' in c_el['tags']:
+                    continue
+                if StopArea.is_stop(c_el):
                     # Take care to not add other stations
-                    if 'station' not in c_el['tags']:
-                        if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
-                            self.stops_and_platforms.add(c_id)
+                    if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
+                        self.stops.add(c_id)
+                elif StopArea.is_stop(c_el):
+                    # Take care to not add other stations
+                    if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
+                        self.platforms.add(c_id)
                 elif c_el['tags'].get('railway') == 'subway_entrance':
                     if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
                         if c_el['type'] != 'node':
@@ -182,31 +208,90 @@ class StopArea:
         if self.entrances and not self.exits:
             city.error('No exits for a station', stop_area or station.element)
 
+        for el in self.get_elements():
+            self.centers[el] = el_center(city.elements[el])
+
         """Calculates the center point of the station. This algorithm
         cannot rely on a station node, since many stop_areas can share one.
         Basically it averages center points of all platforms
         and stop positions."""
-        if len(self.stops_and_platforms) == 0:
+        if len(self.stops) + len(self.platforms) == 0:
             self.center = station.center
         else:
             self.center = [0, 0]
-            for sp in self.stops_and_platforms:
-                spc = el_center(city.elements[sp])
-                if spc:
-                    for i in range(2):
-                        self.center[i] += spc[i]
+            for sp in self.stops | self.platforms:
+                spc = self.centers[sp]
+                for i in range(2):
+                    self.center[i] += spc[i]
             for i in range(2):
-                self.center[i] /= len(self.stops_and_platforms)
-
-        for el in self.get_elements():
-            self.centers[el] = el_center(city.elements[el])
+                self.center[i] /= len(self.stops) + len(self.platforms)
 
     def get_elements(self):
         result = set([self.id, self.station.id])
         result.update(self.entrances)
         result.update(self.exits)
-        result.update(self.stops_and_platforms)
+        result.update(self.stops)
+        result.update(self.platforms)
         return result
+
+
+class RouteStop:
+    def __init__(self, stoparea):
+        self.stoparea = stoparea
+        self.stop = None  # Stop position (lon, lat), possibly projected
+        self.platform_entry = None  # Platform el_id
+        self.platform_exit = None  # Platform el_id
+        self.can_enter = False
+        self.can_exit = False
+        self.seen_stop = False
+        self.seen_platform = False
+        self.seen_station = False
+
+    def add(self, member, relation, city):
+        el = city.elements[el_id(member)]
+        role = member['role']
+
+        if StopArea.is_stop(el):
+            if self.seen_stop or self.seen_station:
+                city.error('Multiple stops for a station ({}) in a route relation'.format(
+                    el_id(el)), relation)
+            self.seen_stop = True
+            if 'platform' in role:
+                city.warn('Stop in a platform role in a route', el)
+            self.stop = el_center(el)
+            if 'entry_only' not in role:
+                self.can_exit = True
+            if 'exit_only' not in role:
+                self.can_enter = True
+
+        elif Station.is_station(el):
+            if self.seen_stop or self.seen_station:
+                city.error('Multiple stops for a station ({}) in a route relation'.format(
+                    el_id(el)), relation)
+            self.seen_station = True
+            if not self.seen_stop and not self.seen_platform:
+                self.stop = el_center(el)
+                self.can_enter = True
+                self.can_exit = True
+
+        elif StopArea.is_platform(el):
+            if self.seen_platform:
+                city.error('Multiple platforms for a station ({}) in a route relation'.format(
+                    el_id(el)), relation)
+            self.seen_platform = True
+            if 'stop' in role:
+                city.warn('Platform in a stop role in a route', el)
+            if 'exit_only' not in role:
+                self.platform_entry = el_id(el)
+                self.can_enter = True
+            if 'entry_only' not in role:
+                self.platform_exit = el_id(el)
+                self.can_exit = True
+            if not self.seen_stop:
+                self.stop = el_center(el)
+
+        else:
+            city.error('Not a stop or platform in a route relation', el)
 
 
 class Route:
@@ -230,6 +315,53 @@ class Route:
     def get_network(relation):
         return relation['tags'].get('network', relation['tags'].get('operator', None))
 
+    def build_longest_line(self, relation, city):
+        line_nodes = set()
+        last_track = []
+        track = []
+        warned_about_holes = False
+        for m in relation['members']:
+            el = city.elements.get(el_id(m), None)
+            if not el or not StopArea.is_track(el):
+                continue
+            if 'nodes' not in el:
+                city.error('Cannot find nodes in a railway', el)
+                continue
+            line_nodes.update(el['nodes'])
+            if not track:
+                is_first = True
+                track.extend(el['nodes'])
+            else:
+                new_segment = list(el['nodes'])  # copying
+                if new_segment[0] == track[-1]:
+                    track.extend(new_segment)
+                elif new_segment[-1] == track[-1]:
+                    track.extend(reversed(new_segment))
+                elif is_first and track[0] in (new_segment[0], new_segment[-1]):
+                    # We can reverse the track and try again
+                    track.reverse()
+                    if new_segment[0] == track[-1]:
+                        track.extend(new_segment)
+                    else:
+                        track.extend(reversed(new_segment))
+                else:
+                    # Store the track if it is long and clean it
+                    if not warned_about_holes:
+                        city.warn('Hole in route rails near node {}'.format(
+                            new_segment[0]), relation)
+                        warned_about_holes = True
+                    if len(track) > len(last_track):
+                        last_track = track
+                    track = []
+                is_first = False
+        if len(track) > len(last_track):
+            last_track = track
+        return last_track, line_nodes
+
+    def project_stops_on_line(self):
+        for st in self.stops:
+            pass
+
     def __init__(self, relation, city):
         if not Route.is_route(relation):
             raise Exception('The relation does not seem a route: {}'.format(relation))
@@ -244,12 +376,12 @@ class Route:
         self.colour = relation['tags'].get('colour', None)
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
-        self.rails = []
-        self.stops = []
-        # Add circular=yes on a route to disable station order checking
-        # This is a hack, but few lines actually have repeating stops
-        is_circle = relation['tags'].get('circular') == 'yes'
-        enough_stops = False
+        # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
+        self.tracks, line_nodes = self.build_longest_line(relation, city)
+        self.stops = []  # List of RouteStop
+        seen_stops = False
+        seen_platforms = False
+        repeat_pos = None
         for m in relation['members']:
             k = el_id(m)
             if k in city.stations:
@@ -258,23 +390,53 @@ class Route:
                 if len(st_list) > 1:
                     city.error('Ambigous station {} in route. Please use stop_position or split '
                                'interchange stations'.format(st.name), relation)
-                if not self.stops or self.stops[-1] != st:
-                    if enough_stops:
-                        if st not in self.stops:
-                            city.error('Inconsistent platform-stop "{}" in route'.format(st.name),
+                # Get a member type
+                el = city.elements[k]
+                if StopArea.is_stop(el) or Station.is_station(el):
+                    el_type = 'stop'
+                elif StopArea.is_platform(el):
+                    el_type = 'platform'
+                else:
+                    el_type = None
+
+                if el_type:
+                    if repeat_pos is None:
+                        if not self.stops or st not in self.stops:
+                            stop = RouteStop(st)
+                            self.stops.append(stop)
+                        elif self.stops[-1] == st:
+                            stop = self.stops[-1]
+                        else:
+                            # We've got a repeat
+                            if seen_stops and seen_platforms:
+                                city.error('', relation)
+                                repeat_pos = len(self.stops)
+                            elif (el_type == 'stop' and not seen_platforms) or (
+                                  el_type == 'platform' and not seen_stops):
+                                # Circular route!
+                                stop = RouteStop(st)
+                                self.stops.append(stop)
+                            else:
+                                repeat_pos = 0
+                    if repeat_pos is not None and repeat_pos < len(self.stops):
+                        # Check that the type matches
+                        if (el_type == 'stop' and seen_stops) or (
+                                el_type == 'platform' and seen_platforms):
+                            city.error('Found an out-of-place {}: {}'.format(el_type, k), relation)
+                            continue
+                        # Find the matching stop starting with index repeat_pos
+                        while (repeat_pos < len(self.stops) and
+                               self.stops[repeat_pos].stoparea.id != st.id):
+                            repeat_pos += 1
+                        if repeat_pos >= len(self.stops):
+                            city.error('Incorrect order of {}s at {}'.format(looking_for, k),
                                        relation)
-                    elif st not in self.stops or is_circle:
-                        self.stops.append(st)
-                        if self.mode not in st.modes:
-                            city.warn('{} station "{}" in {} route'.format(
-                                '+'.join(st.modes), st.name, self.mode), relation)
-                    elif self.stops[0] == st and not enough_stops:
-                        enough_stops = True
-                    else:
-                        city.error(
-                            'Duplicate stop "{}" in route - check stop/platform order'.format(
-                                st.name), relation)
-                continue
+                            continue
+                        stop = self.stops[repeat_pos]
+                    stop.add(m, relation, city)
+                    seen_stops |= stop.seen_stop or stop.seen_station
+                    seen_platforms |= stop.seen_platform
+                    continue
 
             if k not in city.elements:
                 if m['role'] in ('stop', 'platform'):
@@ -298,20 +460,11 @@ class Route:
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         m['role'], m['type'], m['ref']), relation)
-            if el['tags'].get('railway') in ('rail', 'subway', 'light_rail', 'monorail'):
-                if 'nodes' in el:
-                    self.rails.append((el['nodes'][0], el['nodes'][-1]))
-                else:
-                    city.error('Cannot find nodes in a railway', el)
-                continue
         if not self.stops:
             city.error('Route has no stops', relation)
-        for i in range(1, len(self.rails)):
-            connected = sum([(1 if self.rails[i][j[0]] == self.rails[i-1][j[1]] else 0)
-                             for j in ((0, 0), (0, 1), (1, 0), (1, 1))])
-            if not connected:
-                city.warn('Hole in route rails near node {}'.format(self.rails[i][0]), relation)
-                break
+        else:
+            self.is_circular = self.stops[0].stoparea == self.stops[-1].stoparea
+            self.project_stops_on_line()
 
     def __len__(self):
         return len(self.stops)
@@ -514,7 +667,7 @@ class City:
                             self.stations[st_el].append(station)
 
                         # Check that stops and platforms belong to single stop_area
-                        for sp in station.stops_and_platforms:
+                        for sp in station.stops | station.platforms:
                             if sp in self.stops_and_platforms:
                                 self.warn('A stop or a platform {} belongs to multiple '
                                           'stations, might be correct'.format(sp))
@@ -558,7 +711,7 @@ class City:
         used_stop_areas = set()
         for rmaster in self.routes.values():
             for route in rmaster:
-                used_stop_areas.update(route.stops)
+                used_stop_areas.update([s.stoparea for s in route.stops])
         new_transfers = []
         for transfer in self.transfers:
             new_tr = [s for s in transfer if s in used_stop_areas]
@@ -604,7 +757,7 @@ class City:
             networks[str(rmaster.network)] += 1
             for route in rmaster:
                 for st in route.stops:
-                    unused_stations.discard(st.station.id)
+                    unused_stations.discard(st.stoparea.station.id)
         if unused_stations:
             self.unused_stations = len(unused_stations)
             self.warn('{} unused stations: {}'.format(

@@ -26,6 +26,8 @@ def el_id(el):
 
 
 def el_center(el):
+    if not el:
+        return None
     if 'lat' in el:
         return (el['lon'], el['lat'])
     elif 'center' in el:
@@ -327,12 +329,13 @@ class Route:
             if 'nodes' not in el:
                 city.error('Cannot find nodes in a railway', el)
                 continue
-            line_nodes.update(el['nodes'])
+            nodes = ['n{}'.format(n) for n in el['nodes']]
+            line_nodes.update(nodes)
             if not track:
                 is_first = True
-                track.extend(el['nodes'])
+                track.extend(nodes)
             else:
-                new_segment = list(el['nodes'])  # copying
+                new_segment = list(nodes)  # copying
                 if new_segment[0] == track[-1]:
                     track.extend(new_segment)
                 elif new_segment[-1] == track[-1]:
@@ -377,7 +380,14 @@ class Route:
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
-        self.tracks, line_nodes = self.build_longest_line(relation, city)
+        tracks, line_nodes = self.build_longest_line(relation, city)
+        self.tracks = [el_center(city.elements.get(k)) for k in tracks]
+        if None in self.tracks:
+            self.tracks = []  # this should not happen
+            for n in filter(lambda x: x not in city.elements, tracks):
+                city.error('The dataset is missing the railway tracks node {}'.format(n), relation)
+                break
+        check_stop_positions = len(line_nodes) > 50  # arbitrary number, of course
         self.stops = []  # List of RouteStop
         seen_stops = False
         seen_platforms = False
@@ -436,6 +446,10 @@ class Route:
                     stop.add(m, relation, city)
                     seen_stops |= stop.seen_stop or stop.seen_station
                     seen_platforms |= stop.seen_platform
+
+                    if check_stop_positions and StopArea.is_stop(el):
+                        if k not in line_nodes:
+                            city.warn('Stop position {} is not on tracks'.format(k), relation)
                     continue
 
             if k not in city.elements:

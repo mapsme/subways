@@ -51,7 +51,7 @@ def distance(p1, p2):
 
 
 def format_elid_list(ids):
-    msg = ', '.join(list(ids)[:20])
+    msg = ', '.join(sorted(ids)[:20])
     if len(ids) > 20:
         msg += ', ...'
     return msg
@@ -365,18 +365,20 @@ class Route:
         for st in self.stops:
             pass
 
-    def __init__(self, relation, city):
+    def __init__(self, relation, city, master=None):
         if not Route.is_route(relation):
             raise Exception('The relation does not seem a route: {}'.format(relation))
+        master_tags = {} if not master else master['tags']
         self.element = relation
         self.id = el_id(relation)
-        if 'ref' not in relation['tags']:
+        if 'ref' not in relation['tags'] and 'ref' not in master_tags:
             city.warn('Missing ref on a route', relation)
-        self.ref = relation['tags'].get('ref', relation['tags'].get('name', None))
+        self.ref = relation['tags'].get('ref', master_tags.get(
+            'ref', relation['tags'].get('name', None)))
         self.name = relation['tags'].get('name', None)
-        if 'colour' not in relation['tags']:
+        if 'colour' not in relation['tags'] and 'colour' not in master_tags:
             city.warn('Missing colour on a route', relation)
-        self.colour = relation['tags'].get('colour', None)
+        self.colour = relation['tags'].get('colour', master_tags.get('colour', None))
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
@@ -692,22 +694,18 @@ class City:
         for el in self.elements.values():
             if Route.is_route(el):
                 route_id = el_id(el)
+                master = self.masters.get(route_id, None)
                 if self.networks:
                     network = Route.get_network(el)
-                    if route_id in self.masters:
-                        master_network = Route.get_network(self.masters[route_id])
+                    if master:
+                        master_network = Route.get_network(master)
                     else:
                         master_network = None
                     if network not in self.networks and master_network not in self.networks:
                         continue
 
-                route = Route(el, self)
-                if route.id in self.masters:
-                    master = self.masters[route.id]
-                    k = el_id(master)
-                else:
-                    master = None
-                    k = route.ref
+                route = Route(el, self, master)
+                k = el_id(master) if master else route.ref
                 if k not in self.routes:
                     self.routes[k] = RouteMaster(master)
                 self.routes[k].add(route, self)

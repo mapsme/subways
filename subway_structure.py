@@ -350,8 +350,10 @@ class RouteStop:
             multiple_check = self.seen_stop
             self.seen_stop = True
         if multiple_check:
-            city.error('Multiple {}s for a station "{}" ({}) in a route relation'.format(
-                el_type, el['tags'].get('name', ''), el_id(el)), relation)
+            city.error_if(
+                el_type == 'stop',
+                'Multiple {}s for a station "{}" ({}) in a route relation'.format(
+                    el_type, el['tags'].get('name', ''), el_id(el)), relation)
 
 
 class Route:
@@ -583,10 +585,7 @@ class Route:
                 if angle < MIN_ANGLE_BETWEEN_STOPS:
                     msg = 'Angle between stops around "{}" is too narrow, {} degrees'.format(
                         self.stops[si+1].stoparea.name, angle)
-                    if angle < 20:
-                        city.error(msg, relation)
-                    else:
-                        city.warn(msg, relation)
+                    city.error_if(angle < 20, msg, relation)
 
     def __len__(self):
         return len(self.stops)
@@ -756,6 +755,12 @@ class City:
         msg = self.log_message(message, el)
         self.errors.append(msg)
 
+    def error_if(self, is_error, message, el=None):
+        if is_error:
+            self.error(message, el)
+        else:
+            self.warn(message, el)
+
     def make_transfer(self, sag):
         transfer = set()
         for m in sag['members']:
@@ -895,22 +900,16 @@ class City:
         if self.found_stations != self.num_stations:
             msg = 'Found {} stations in routes, expected {}'.format(
                 self.found_stations, self.num_stations)
-            if (0 <= (self.num_stations - self.found_stations) / self.num_stations <=
-                    ALLOWED_STATIONS_MISMATCH):
-                self.warn(msg)
-            else:
-                self.error(msg)
+            self.error_if(not (0 <= (self.num_stations - self.found_stations) / self.num_stations <=
+                               ALLOWED_STATIONS_MISMATCH), msg)
 
         self.found_interchanges = len(self.transfers)
         if self.found_interchanges != self.num_interchanges:
             msg = 'Found {} interchanges, expected {}'.format(
                 self.found_interchanges, self.num_interchanges)
-            if (self.num_interchanges == 0 or
-                    (0 <= (self.num_interchanges - self.found_interchanges) /
-                     self.num_interchanges <= ALLOWED_TRANSFERS_MISMATCH)):
-                self.warn(msg)
-            else:
-                self.error(msg)
+            self.error_if(self.num_interchanges != 0 and not
+                          (0 <= (self.num_interchanges - self.found_interchanges) /
+                           self.num_interchanges <= ALLOWED_TRANSFERS_MISMATCH), msg)
 
         self.found_networks = len(networks)
         if len(networks) > max(1, len(self.networks)):

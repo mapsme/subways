@@ -205,7 +205,6 @@ def make_geojson(city, tracks=True):
     for t in city.transfers:
         transfers.update(t)
     features = []
-    n = []
     for rmaster in city:
         for variant in rmaster:
             if not tracks:
@@ -246,7 +245,7 @@ def make_geojson(city, tracks=True):
                         'marker-symbol': 'circle'
                     }
                 })
-                n.append({
+                features.append({
                     'type': 'Feature',
                     'geometry': {
                         'type': 'Point',
@@ -351,16 +350,18 @@ if __name__ == '__main__':
         help='Use city boundaries to query Overpass API instead of querying the world')
     parser.add_argument('-q', '--quiet', action='store_true', help='Show only warnings and errors')
     parser.add_argument('-c', '--city', help='Validate only a single city or a country')
-    parser.add_argument('-e', '--entrances', type=argparse.FileType('w'),
+    parser.add_argument('-e', '--entrances', type=argparse.FileType('w', encoding='utf-8'),
                         help='Export unused subway entrances as GeoJSON here')
-    parser.add_argument('-l', '--log', type=argparse.FileType('w'),
+    parser.add_argument('-l', '--log', type=argparse.FileType('w', encoding='utf-8'),
                         help='Validation JSON file name')
-    parser.add_argument('-o', '--output', type=argparse.FileType('w'),
+    parser.add_argument('-o', '--output', type=argparse.FileType('w', encoding='utf-8'),
                         help='JSON file for MAPS.ME')
-    parser.add_argument('-d', '--dump', type=argparse.FileType('w'),
+    parser.add_argument('-d', '--dump', type=argparse.FileType('w', encoding='utf-8'),
                         help='Make a YAML file for a city data')
-    parser.add_argument('-j', '--json', type=argparse.FileType('w'),
+    parser.add_argument('-j', '--json', type=argparse.FileType('w', encoding='utf-8'),
                         help='Make a GeoJSON file for a city data')
+    parser.add_argument('--crude', action='store_true',
+                        help='Do not use OSM railway geometry for GeoJSON')
     options = parser.parse_args()
 
     if options.quiet:
@@ -390,9 +391,13 @@ if __name__ == '__main__':
         logging.info('Reading %s', options.xml)
         osm = load_xml(options.xml)
         if options.source:
-            with open(options.source, 'w') as f:
+            with open(options.source, 'w', encoding='utf-8') as f:
                 json.dump(osm, f)
     else:
+        if len(cities) > 10:
+            logging.error('Would not download that many cities from Overpass API, '
+                          'choose a smaller set')
+            sys.exit(3)
         if options.bbox:
             bboxes = [c.bbox for c in cities]
         else:
@@ -400,7 +405,7 @@ if __name__ == '__main__':
         logging.info('Downloading data from Overpass API')
         osm = multi_overpass(bboxes)
         if options.source:
-            with open(options.source, 'w') as f:
+            with open(options.source, 'w', encoding='utf-8') as f:
                 json.dump(osm, f)
     logging.info('Downloaded %s elements, sorting by city', len(osm))
 
@@ -438,7 +443,7 @@ if __name__ == '__main__':
 
     if options.json:
         if len(cities) == 1:
-            json.dump(make_geojson(cities[0]), options.json)
+            json.dump(make_geojson(cities[0], not options.crude), options.json)
         else:
             logging.error('Cannot make a json of %s cities at once', len(cities))
 

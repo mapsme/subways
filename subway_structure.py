@@ -294,17 +294,26 @@ class RouteStop:
         self.seen_platform = False
         self.seen_station = False
 
+    @staticmethod
+    def get_member_type(el, role):
+        if StopArea.is_stop(el):
+            return 'stop'
+        elif StopArea.is_platform(el):
+            return 'platform'
+        elif Station.is_station(el):
+            if 'platform' in role:
+                return 'platform'
+            else:
+                return 'stop'
+        return None
+
     def add(self, member, relation, city):
         el = city.elements[el_id(member)]
         role = member['role']
 
         if StopArea.is_stop(el):
-            if self.seen_stop:
-                city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
-                    el['tags'].get('name', ''), el_id(el)), relation)
-            self.seen_stop = True
             if 'platform' in role:
-                city.warn('Stop in a platform role in a route', el)
+                city.warn('Stop position in a platform role in a route', el)
             self.stop = el_center(el)
             if 'entry_only' not in role:
                 self.can_exit = True
@@ -316,22 +325,8 @@ class RouteStop:
                 self.stop = el_center(el)
                 self.can_enter = True
                 self.can_exit = True
-            multiple_check = False
-            if 'platform' in role:
-                multiple_check = self.seen_platform
-                self.seen_platform = True
-            else:
-                multiple_check = self.seen_stop
-                self.seen_stop = True
-            if multiple_check:
-                city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
-                    el['tags'].get('name', ''), el_id(el)), relation)
 
         elif StopArea.is_platform(el):
-            if self.seen_platform:
-                city.warn('Multiple platforms for a station "{}" ({}) in a route relation'.format(
-                    el['tags'].get('name', ''), el_id(el)), relation)
-            self.seen_platform = True
             if 'stop' in role:
                 city.warn('Platform in a stop role in a route', el)
             if 'exit_only' not in role:
@@ -345,6 +340,18 @@ class RouteStop:
 
         else:
             city.error('Not a stop or platform in a route relation', el)
+
+        multiple_check = False
+        el_type = RouteStop.get_member_type(el, role)
+        if el_type == 'platform':
+            multiple_check = self.seen_platform
+            self.seen_platform = True
+        elif el_type == 'stop':
+            multiple_check = self.seen_stop
+            self.seen_stop = True
+        if multiple_check:
+            city.error('Multiple {}s for a station "{}" ({}) in a route relation'.format(
+                el_type, el['tags'].get('name', ''), el_id(el)), relation)
 
 
 class Route:
@@ -487,15 +494,8 @@ class Route:
                 if len(st_list) > 1:
                     city.error('Ambigous station {} in route. Please use stop_position or split '
                                'interchange stations'.format(st.name), relation)
-                # Get a member type
                 el = city.elements[k]
-                if StopArea.is_stop(el) or Station.is_station(el):
-                    el_type = 'stop'
-                elif StopArea.is_platform(el):
-                    el_type = 'platform'
-                else:
-                    el_type = None
-
+                el_type = RouteStop.get_member_type(el, m['role'])
                 if el_type:
                     if repeat_pos is None:
                         if not self.stops or st not in stations:

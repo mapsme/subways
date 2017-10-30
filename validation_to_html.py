@@ -76,6 +76,7 @@ def tmpl(s, data=None, **kwargs):
 EXPAND_OSM_TYPE = {'n': 'node', 'w': 'way', 'r': 'relation'}
 RE_SHORT = re.compile(r'([nwr])(\d+)')
 RE_FULL = re.compile(r'(node|way|relation) (\d+)')
+RE_COORDS = re.compile(r'\((-?\d+\.\d+), (-?\d+\.\d+)\)')
 
 
 def osm_links(s):
@@ -85,6 +86,8 @@ def osm_links(s):
             EXPAND_OSM_TYPE[m.group(1)[0]], m.group(2), m.group(0))
     s = RE_SHORT.sub(link, s)
     s = RE_FULL.sub(link, s)
+    s = RE_COORDS.sub(
+        r'(<a href="https://www.openstreetmap.org/search?query=\2%2C\1#map=18/\2/\1">pos</a>)', s)
     return s
 
 

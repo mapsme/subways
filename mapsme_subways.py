@@ -200,6 +200,66 @@ def dump_data(city, f):
     write_yaml(result, f)
 
 
+def make_geojson(city, tracks=True):
+    transfers = set()
+    for t in city.transfers:
+        transfers.update(t)
+    features = []
+    n = []
+    for rmaster in city:
+        for variant in rmaster:
+            if not tracks:
+                features.append({
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': [s.stop for s in variant],
+                    },
+                    'properties': {
+                        'ref': variant.ref,
+                        'name': variant.name,
+                        'stroke': variant.colour
+                    }
+                })
+            elif variant.tracks:
+                features.append({
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': variant.tracks,
+                    },
+                    'properties': {
+                        'ref': variant.ref,
+                        'name': variant.name,
+                        'stroke': variant.colour
+                    }
+                })
+            for st in variant:
+                features.append({
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'Point',
+                        'coordinates': st.stop,
+                    },
+                    'properties': {
+                        'marker-size': 'small',
+                        'marker-symbol': 'circle'
+                    }
+                })
+                n.append({
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'Point',
+                        'coordinates': st.stoparea.center,
+                    },
+                    'properties': {
+                        'name': st.stoparea.name,
+                        'marker-color': '#ff2600' if st.stoparea in transfers else '#797979'
+                    }
+                })
+    return {'type': 'FeatureCollection', 'features': features}
+
+
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
 
 
@@ -297,6 +357,8 @@ if __name__ == '__main__':
                         help='JSON file for MAPS.ME')
     parser.add_argument('-d', '--dump', type=argparse.FileType('w'),
                         help='Make a YAML file for a city data')
+    parser.add_argument('-j', '--json', type=argparse.FileType('w'),
+                        help='Make a GeoJSON file for a city data')
     options = parser.parse_args()
 
     if options.quiet:
@@ -371,6 +433,12 @@ if __name__ == '__main__':
             dump_data(cities[0], options.dump)
         else:
             logging.error('Cannot dump %s cities at once', len(cities))
+
+    if options.json:
+        if len(cities) == 1:
+            json.dump(make_geojson(cities[0]), options.json)
+        else:
+            logging.error('Cannot make a json of %s cities at once', len(cities))
 
     # Finally, prepare a JSON file for MAPS.ME
     if options.output:

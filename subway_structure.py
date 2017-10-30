@@ -9,9 +9,11 @@ from collections import Counter, defaultdict
 SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
 MODES = ('subway', 'light_rail', 'monorail')
 MAX_DISTANCE_NEARBY = 150  # in meters
+MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
+NOWHERE_STOP = (0, 0)  # too far away from any metro system
 
 transfers = []
 used_entrances = set()
@@ -48,6 +50,42 @@ def distance(p1, p2):
         0.5 * math.radians(p1[1] + p2[1]))
     dy = math.radians(p1[1] - p2[1])
     return 6378137 * math.sqrt(dx*dx + dy*dy)
+
+
+def project_on_segment(p, p1, p2):
+    dp = (p2[0] - p1[0], p2[1] - p1[1])
+    d2 = dp[0]*dp[0] + dp[1]*dp[1]
+    u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
+    res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
+    if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
+        return None
+    return res
+
+
+def project_on_line(p, line):
+    result = None
+    d_min = MAX_DISTANCE_STOP_TO_LINE * 2
+    # First, check vertices in the line
+    for vertex in line:
+        d = distance(p, vertex)
+        if d < d_min:
+            result = vertex
+            d_min = d
+    # And then calculate distances to each segment
+    for seg in range(len(line)-1):
+        # Check bbox for speed
+        if not ((min(line[seg][0], line[seg+1][0]) - MAX_DISTANCE_STOP_TO_LINE <= p[0] <=
+                 max(line[seg][0], line[seg+1][0]) + MAX_DISTANCE_STOP_TO_LINE) and
+                (min(line[seg][1], line[seg+1][1]) - MAX_DISTANCE_STOP_TO_LINE <= p[1] <=
+                 max(line[seg][1], line[seg+1][1]) + MAX_DISTANCE_STOP_TO_LINE)):
+            continue
+        proj = project_on_segment(p, line[seg], line[seg+1])
+        if proj:
+            d = distance(p, proj)
+            if d < d_min:
+                result = proj
+                d_min = d
+    return NOWHERE_STOP if not result else result
 
 
 def format_elid_list(ids):
@@ -132,8 +170,8 @@ class StopArea:
     def __init__(self, station, city, stop_area=None):
         """Call this with a Station object."""
 
-        self.id = el_id(stop_area) if stop_area else station.id
-        self.stop_area = stop_area
+        self.element = stop_area or station.element
+        self.id = el_id(self.element)
         self.station = station
         self.stops = set()  # set of el_ids of stop_positions
         self.platforms = set()  # set of el_ids of platforms
@@ -326,7 +364,7 @@ class Route:
             el = city.elements.get(el_id(m), None)
             if not el or not StopArea.is_track(el):
                 continue
-            if 'nodes' not in el:
+            if 'nodes' not in el or len(el['nodes']) < 2:
                 city.error('Cannot find nodes in a railway', el)
                 continue
             nodes = ['n{}'.format(n) for n in el['nodes']]
@@ -337,16 +375,16 @@ class Route:
             else:
                 new_segment = list(nodes)  # copying
                 if new_segment[0] == track[-1]:
-                    track.extend(new_segment)
+                    track.extend(new_segment[1:])
                 elif new_segment[-1] == track[-1]:
-                    track.extend(reversed(new_segment))
+                    track.extend(reversed(new_segment[:-1]))
                 elif is_first and track[0] in (new_segment[0], new_segment[-1]):
                     # We can reverse the track and try again
                     track.reverse()
                     if new_segment[0] == track[-1]:
-                        track.extend(new_segment)
+                        track.extend(new_segment[1:])
                     else:
-                        track.extend(reversed(new_segment))
+                        track.extend(reversed(new_segment[:-1]))
                 else:
                     # Store the track if it is long and clean it
                     if not warned_about_holes:
@@ -361,9 +399,39 @@ class Route:
             last_track = track
         return last_track, line_nodes
 
-    def project_stops_on_line(self):
-        for st in self.stops:
-            pass
+    def project_stops_on_line(self, city):
+        projected = [project_on_line(x.stop, self.tracks) for x in self.stops]
+        start = 0
+        while start < len(self.stops) and distance(
+                self.stops[start].stop, projected[start]) > MAX_DISTANCE_STOP_TO_LINE:
+            start += 1
+        end = len(self.stops) - 1
+        while end > start and distance(
+                self.stops[end].stop, projected[end]) > MAX_DISTANCE_STOP_TO_LINE:
+            end -= 1
+        tracks_start = []
+        tracks_end = []
+        for i in range(len(self.stops)):
+            if i < start:
+                tracks_start.append(self.stops[i].stop)
+            elif i > end:
+                tracks_end.append(self.stops[i].stop)
+            elif projected[i] == NOWHERE_STOP:
+                city.warn('Stop "{}" {} is nowhere near the tracks'.format(
+                    self.stops[i].stoparea.name, self.stops[i].stop), self.element)
+            else:
+                # We've got two separate stations with a good stretch of
+                # railway tracks between them. Put these on tracks.
+                d = round(distance(self.stops[i].stop, projected[i]))
+                if d > MAX_DISTANCE_STOP_TO_LINE:
+                    city.error('Stop "{}" {} is {} meters from the tracks'.format(
+                        self.stops[i].stoparea.name, self.stops[i].stop, d), self.element)
+                else:
+                    self.stops[i].stop = projected[i]
+        if start >= len(self.stops):
+            self.tracks = tracks_start
+        elif tracks_start or tracks_end:
+            self.tracks = tracks_start + self.tracks + tracks_end
 
     def __init__(self, relation, city, master=None):
         if not Route.is_route(relation):
@@ -480,7 +548,7 @@ class Route:
             city.error('Route has no stops', relation)
         else:
             self.is_circular = self.stops[0].stoparea == self.stops[-1].stoparea
-            self.project_stops_on_line()
+            self.project_stops_on_line(city)
 
     def __len__(self):
         return len(self.stops)

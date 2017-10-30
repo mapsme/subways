@@ -71,7 +71,7 @@ QNODES="station=subway =light_rail =monorail railway=subway_entrance subway=yes 
 # Running the validation
 
 VALIDATION="$TMPDIR/validation.json"
-"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${MAPSME+-o "$MAPSME"} ${CITY+-c "$CITY"${DUMP+ -d "$DUMP"}}
+"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${MAPSME+-o "$MAPSME"} ${CITY+-c "$CITY"${DUMP+ -d "$DUMP"}${JSON+ -j "$JSON"}}
 rm "$FILTERED_DATA"
 
 # Preparing HTML files

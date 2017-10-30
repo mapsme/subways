@@ -288,10 +288,12 @@ def prepare_mapsme_data(transfers, cities):
             }
             for variant in route:
                 itin = []
+                time = 0
                 for stop in variant:
                     stops[stop.stoparea.id] = stop.stoparea
-                    itin.append(uid(stop.stoparea.id))
-                routes['itineraries'].append({'stops': itin})
+                    itin.append([uid(stop.stoparea.id), time])
+                    time += 60
+                routes['itineraries'].append({'stops': itin, 'interval': 150})
             network['routes'].append(routes)
         networks.append(network)
 

@@ -12,6 +12,7 @@ MAX_DISTANCE_NEARBY = 150  # in meters
 MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
+MIN_ANGLE_BETWEEN_STOPS = 60  # in degrees
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
 NOWHERE_STOP = (0, 0)  # too far away from any metro system
 
@@ -64,7 +65,7 @@ def project_on_segment(p, p1, p2):
 
 def project_on_line(p, line):
     result = None
-    d_min = MAX_DISTANCE_STOP_TO_LINE * 2
+    d_min = MAX_DISTANCE_STOP_TO_LINE * 5
     # First, check vertices in the line
     for vertex in line:
         d = distance(p, vertex)
@@ -86,6 +87,12 @@ def project_on_line(p, line):
                 result = proj
                 d_min = d
     return NOWHERE_STOP if not result else result
+
+
+def angle_between(p1, c, p2):
+    a = round(abs(math.degrees(math.atan2(p1[1]-c[1], p1[0]-c[0]) -
+                               math.atan2(p2[1]-c[1], p2[0]-c[0]))))
+    return a if a <= 180 else 360-a
 
 
 def format_elid_list(ids):
@@ -293,8 +300,8 @@ class RouteStop:
 
         if StopArea.is_stop(el):
             if self.seen_stop or self.seen_station:
-                city.error('Multiple stops for a station ({}) in a route relation'.format(
-                    el_id(el)), relation)
+                city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
+                    el['tags'].get('name', ''), el_id(el)), relation)
             self.seen_stop = True
             if 'platform' in role:
                 city.warn('Stop in a platform role in a route', el)
@@ -306,8 +313,8 @@ class RouteStop:
 
         elif Station.is_station(el):
             if self.seen_stop or self.seen_station:
-                city.error('Multiple stops for a station ({}) in a route relation'.format(
-                    el_id(el)), relation)
+                city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
+                    el['tags'].get('name', ''), el_id(el)), relation)
             self.seen_station = True
             if not self.seen_stop and not self.seen_platform:
                 self.stop = el_center(el)
@@ -316,8 +323,8 @@ class RouteStop:
 
         elif StopArea.is_platform(el):
             if self.seen_platform:
-                city.error('Multiple platforms for a station ({}) in a route relation'.format(
-                    el_id(el)), relation)
+                city.warn('Multiple platforms for a station "{}" ({}) in a route relation'.format(
+                    el['tags'].get('name', ''), el_id(el)), relation)
             self.seen_platform = True
             if 'stop' in role:
                 city.warn('Platform in a stop role in a route', el)
@@ -397,6 +404,9 @@ class Route:
                 is_first = False
         if len(track) > len(last_track):
             last_track = track
+        # Remove duplicate points
+        last_track = [last_track[i] for i in range(len(last_track))
+                      if last_track[i-1] != last_track[i]]
         return last_track, line_nodes
 
     def project_stops_on_line(self, city):
@@ -417,14 +427,14 @@ class Route:
             elif i > end:
                 tracks_end.append(self.stops[i].stop)
             elif projected[i] == NOWHERE_STOP:
-                city.warn('Stop "{}" {} is nowhere near the tracks'.format(
+                city.error('Stop "{}" {} is nowhere near the tracks'.format(
                     self.stops[i].stoparea.name, self.stops[i].stop), self.element)
             else:
                 # We've got two separate stations with a good stretch of
                 # railway tracks between them. Put these on tracks.
                 d = round(distance(self.stops[i].stop, projected[i]))
                 if d > MAX_DISTANCE_STOP_TO_LINE:
-                    city.error('Stop "{}" {} is {} meters from the tracks'.format(
+                    city.warn('Stop "{}" {} is {} meters from the tracks'.format(
                         self.stops[i].stoparea.name, self.stops[i].stop, d), self.element)
                 else:
                     self.stops[i].stop = projected[i]
@@ -459,6 +469,7 @@ class Route:
                 break
         check_stop_positions = len(line_nodes) > 50  # arbitrary number, of course
         self.stops = []  # List of RouteStop
+        stations = set()  # temporary for recording stations
         seen_stops = False
         seen_platforms = False
         repeat_pos = None
@@ -481,24 +492,29 @@ class Route:
 
                 if el_type:
                     if repeat_pos is None:
-                        if not self.stops or st not in self.stops:
+                        if not self.stops or st not in stations:
                             stop = RouteStop(st)
                             self.stops.append(stop)
-                        elif self.stops[-1] == st:
+                            stations.add(st)
+                        elif self.stops[-1].stoparea.id == st.id:
                             stop = self.stops[-1]
                         else:
                             # We've got a repeat
                             if seen_stops and seen_platforms:
-                                city.error('', relation)
+                                city.error('Found an out-of-place {}: {}'.format(
+                                    el_type, k), relation)
                                 repeat_pos = len(self.stops)
                             elif (el_type == 'stop' and not seen_platforms) or (
                                   el_type == 'platform' and not seen_stops):
                                 # Circular route!
                                 stop = RouteStop(st)
                                 self.stops.append(stop)
+                                stations.add(st)
                             else:
                                 repeat_pos = 0
-                    if repeat_pos is not None and repeat_pos < len(self.stops):
+                    if repeat_pos is not None:
+                        if repeat_pos >= len(self.stops):
+                            continue
                         # Check that the type matches
                         if (el_type == 'stop' and seen_stops) or (
                                 el_type == 'platform' and seen_platforms):
@@ -513,9 +529,11 @@ class Route:
                                        relation)
                             continue
                         stop = self.stops[repeat_pos]
+
                     stop.add(m, relation, city)
-                    seen_stops |= stop.seen_stop or stop.seen_station
-                    seen_platforms |= stop.seen_platform
+                    if repeat_pos is None:
+                        seen_stops |= stop.seen_stop or stop.seen_station
+                        seen_platforms |= stop.seen_platform
 
                     if check_stop_positions and StopArea.is_stop(el):
                         if k not in line_nodes:
@@ -546,9 +564,18 @@ class Route:
                         m['role'], m['type'], m['ref']), relation)
         if not self.stops:
             city.error('Route has no stops', relation)
+        elif len(self.stops) == 1:
+            city.error('Route has only one stop', relation)
         else:
             self.is_circular = self.stops[0].stoparea == self.stops[-1].stoparea
             self.project_stops_on_line(city)
+            for si in range(len(self.stops)-2):
+                angle = angle_between(self.stops[si].stop,
+                                      self.stops[si+1].stop,
+                                      self.stops[si+2].stop)
+                if angle < MIN_ANGLE_BETWEEN_STOPS:
+                    city.error('Angle between stops {} and {} is too narrow'.format(
+                        self.stops[si].stoparea.name, self.stops[si+2].stoparea.name), relation)
 
     def __len__(self):
         return len(self.stops)

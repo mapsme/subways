@@ -46,7 +46,7 @@ def el_center(el):
 
 def distance(p1, p2):
     if p1 is None or p2 is None:
-        return None
+        raise Exception('One of arguments to distance({}, {}) is None'.format(p1, p2))
     dx = math.radians(p1[0] - p2[0]) * math.cos(
         0.5 * math.radians(p1[1] + p2[1]))
     dy = math.radians(p1[1] - p2[1])
@@ -299,7 +299,7 @@ class RouteStop:
         role = member['role']
 
         if StopArea.is_stop(el):
-            if self.seen_stop or self.seen_station:
+            if self.seen_stop:
                 city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
                     el['tags'].get('name', ''), el_id(el)), relation)
             self.seen_stop = True
@@ -312,14 +312,20 @@ class RouteStop:
                 self.can_enter = True
 
         elif Station.is_station(el):
-            if self.seen_stop or self.seen_station:
-                city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
-                    el['tags'].get('name', ''), el_id(el)), relation)
-            self.seen_station = True
             if not self.seen_stop and not self.seen_platform:
                 self.stop = el_center(el)
                 self.can_enter = True
                 self.can_exit = True
+            multiple_check = False
+            if 'platform' in role:
+                multiple_check = self.seen_platform
+                self.seen_platform = True
+            else:
+                multiple_check = self.seen_stop
+                self.seen_stop = True
+            if multiple_check:
+                city.error('Multiple stops for a station "{}" ({}) in a route relation'.format(
+                    el['tags'].get('name', ''), el_id(el)), relation)
 
         elif StopArea.is_platform(el):
             if self.seen_platform:
@@ -501,8 +507,8 @@ class Route:
                         else:
                             # We've got a repeat
                             if seen_stops and seen_platforms:
-                                city.error('Found an out-of-place {}: {}'.format(
-                                    el_type, k), relation)
+                                city.error('Found an out-of-place {}: "{}" ({})'.format(
+                                    el_type, el['tags'].get('name', ''), k), relation)
                                 repeat_pos = len(self.stops)
                             elif (el_type == 'stop' and not seen_platforms) or (
                                   el_type == 'platform' and not seen_stops):
@@ -518,7 +524,8 @@ class Route:
                         # Check that the type matches
                         if (el_type == 'stop' and seen_stops) or (
                                 el_type == 'platform' and seen_platforms):
-                            city.error('Found an out-of-place {}: {}'.format(el_type, k), relation)
+                            city.error('Found an out-of-place {}: "{}" ({})'.format(
+                                el_type, el['tags'].get('name', ''), k), relation)
                             continue
                         # Find the matching stop starting with index repeat_pos
                         while (repeat_pos < len(self.stops) and
@@ -541,7 +548,7 @@ class Route:
                     continue
 
             if k not in city.elements:
-                if m['role'] in ('stop', 'platform'):
+                if 'stop' in m['role'] or 'platform' in m['role']:
                     city.error('{} {} {} for route relation is not in the dataset'.format(
                         m['role'], m['type'], m['ref']), relation)
                     raise Exception('Stop or platform {} {} in relation {} '
@@ -552,7 +559,7 @@ class Route:
             if 'tags' not in el:
                 city.error('Untagged object in a route', relation)
                 continue
-            if m['role'] in ('stop', 'platform'):
+            if 'stop' in m['role'] or 'platform' in m['role']:
                 for k in CONSTRUCTION_KEYS:
                     if k in el['tags']:
                         city.error('An under construction {} in route'.format(m['role']), el)

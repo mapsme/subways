@@ -581,8 +581,12 @@ class Route:
                                       self.stops[si+1].stop,
                                       self.stops[si+2].stop)
                 if angle < MIN_ANGLE_BETWEEN_STOPS:
-                    city.error('Angle between stops {} and {} is too narrow'.format(
-                        self.stops[si].stoparea.name, self.stops[si+2].stoparea.name), relation)
+                    msg = 'Angle between stops around "{}" is too narrow, {} degrees'.format(
+                        self.stops[si+1].stoparea.name, angle)
+                    if angle < 20:
+                        city.error(msg, relation)
+                    else:
+                        city.warn(msg, relation)
 
     def __len__(self):
         return len(self.stops)

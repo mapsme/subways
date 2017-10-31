@@ -509,12 +509,9 @@ class Route:
                             stop = self.stops[-1]
                         else:
                             # We've got a repeat
-                            if seen_stops and seen_platforms:
-                                city.error('Found an out-of-place {}: "{}" ({})'.format(
-                                    el_type, el['tags'].get('name', ''), k), relation)
-                                repeat_pos = len(self.stops)
-                            elif (el_type == 'stop' and not seen_platforms) or (
-                                  el_type == 'platform' and not seen_stops):
+                            if ((seen_stops and seen_platforms) or
+                                    (el_type == 'stop' and not seen_platforms) or
+                                    (el_type == 'platform' and not seen_stops)):
                                 # Circular route!
                                 stop = RouteStop(st)
                                 self.stops.append(stop)

@@ -12,7 +12,7 @@ MAX_DISTANCE_NEARBY = 150  # in meters
 MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
-MIN_ANGLE_BETWEEN_STOPS = 60  # in degrees
+MIN_ANGLE_BETWEEN_STOPS = 45  # in degrees
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
 NOWHERE_STOP = (0, 0)  # too far away from any metro system
 
@@ -472,6 +472,7 @@ class Route:
         if 'colour' not in relation['tags'] and 'colour' not in master_tags:
             city.warn('Missing colour on a route', relation)
         self.colour = relation['tags'].get('colour', master_tags.get('colour', None))
+        self.casing = relation['tags'].get('colour:casing', master_tags.get('colour:casing', None))
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
@@ -607,12 +608,14 @@ class RouteMaster:
         if master:
             self.ref = master['tags'].get('ref', master['tags'].get('name', None))
             self.colour = master['tags'].get('colour', None)
+            self.casing = master['tags'].get('colour:casing', None)
             self.network = Route.get_network(master)
             self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
             self.name = master['tags'].get('name', None)
         else:
             self.ref = None
             self.colour = None
+            self.casing = None
             self.network = None
             self.mode = None
             self.name = None
@@ -629,6 +632,12 @@ class RouteMaster:
         elif route.colour and route.colour != self.colour:
             city.warn('Route "{}" has different colour from master "{}"'.format(
                 route.colour, self.colour), route.element)
+
+        if not self.casing:
+            self.casing = route.casing
+        elif route.casing and route.casing != self.casing:
+            city.warn('Route "{}" has different casing colour from master "{}"'.format(
+                route.casing, self.casing), route.element)
 
         if not self.ref:
             self.ref = route.ref

@@ -156,7 +156,7 @@ def dump_data(city, f):
                 write_yaml(v, f, indent + '  ')
                 if isinstance(v, (list, set, dict)):
                     f.write('\n')
-        else:
+        elif data is not None:
             f.write(data)
             f.write('\n')
 
@@ -168,6 +168,8 @@ def dump_data(city, f):
             'type': route.mode,
             'ref': route.ref,
             'name': route.name,
+            'colour': route.colour,
+            'casing': route.casing,
             'itineraries': []
         }
         for variant in route:
@@ -282,6 +284,8 @@ def prepare_mapsme_data(transfers, cities):
                 'type': route.mode,
                 'ref': route.ref,
                 'name': route.name,
+                'colour': route.colour,
+                'casing': route.casing,
                 'route_id': uid(route.id, 'r'),
                 'itineraries': []
             }

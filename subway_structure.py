@@ -546,7 +546,7 @@ class Route:
 
                     if check_stop_positions and StopArea.is_stop(el):
                         if k not in line_nodes:
-                            city.warn('Stop position "{}" ({}) is not on tracks'.format(
+                            city.error('Stop position "{}" ({}) is not on tracks'.format(
                                 el['tags'].get('name', ''), k), relation)
                     continue
 

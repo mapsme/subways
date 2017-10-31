@@ -207,6 +207,8 @@ def make_geojson(city, tracks=True):
     for t in city.transfers:
         transfers.update(t)
     features = []
+    stopareas = set()
+    stops = set()
     for rmaster in city:
         for variant in rmaster:
             if not tracks:
@@ -236,28 +238,34 @@ def make_geojson(city, tracks=True):
                     }
                 })
             for st in variant:
-                features.append({
-                    'type': 'Feature',
-                    'geometry': {
-                        'type': 'Point',
-                        'coordinates': st.stop,
-                    },
-                    'properties': {
-                        'marker-size': 'small',
-                        'marker-symbol': 'circle'
-                    }
-                })
-                features.append({
-                    'type': 'Feature',
-                    'geometry': {
-                        'type': 'Point',
-                        'coordinates': st.stoparea.center,
-                    },
-                    'properties': {
-                        'name': st.stoparea.name,
-                        'marker-color': '#ff2600' if st.stoparea in transfers else '#797979'
-                    }
-                })
+                stops.add(st.stop)
+                stopareas.add(st.stoparea)
+
+    for stop in stops:
+        features.append({
+            'type': 'Feature',
+            'geometry': {
+                'type': 'Point',
+                'coordinates': st.stop,
+            },
+            'properties': {
+                'marker-size': 'small',
+                'marker-symbol': 'circle'
+            }
+        })
+    for stoparea in stopareas:
+        features.append({
+            'type': 'Feature',
+            'geometry': {
+                'type': 'Point',
+                'coordinates': stoparea.center,
+            },
+            'properties': {
+                'name': stoparea.name,
+                'marker-size': 'small',
+                'marker-color': '#ff2600' if stoparea in transfers else '#797979'
+            }
+        })
     return {'type': 'FeatureCollection', 'features': features}
 
 

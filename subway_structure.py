@@ -54,6 +54,11 @@ def distance(p1, p2):
     return 6378137 * math.sqrt(dx*dx + dy*dy)
 
 
+def is_near(p1, p2):
+    return (p1[0] - 1e-8 <= p2[0] <= p1[0] + 1e-8 and
+            p1[1] - 1e-8 <= p2[1] <= p1[1] + 1e-8)
+
+
 def project_on_line(p, line):
     def project_on_segment(p, p1, p2):
         dp = (p2[0] - p1[0], p2[1] - p1[1])
@@ -94,7 +99,7 @@ def project_on_line(p, line):
 def find_segment(p, line, start_vertex=0):
     """Returns index of a segment and a position inside it."""
     for seg in range(start_vertex, len(line)-1):
-        if p == line[seg]:
+        if is_near(p, line[seg]):
             return seg, 0
         px = (p[0] - line[seg][0]) / (line[seg+1][0] - line[seg][0])
         if 0 <= px <= 1:
@@ -665,7 +670,8 @@ class Route:
                     city.error_if(angle < 20, msg, relation)
             proj1 = find_segment(self.stops[1].stop, self.tracks)
             proj2 = find_segment(self.stops[min(len(self.stops)-1, 3)].stop, self.tracks)
-            if proj1[0] > proj2[0] or (proj1[0] == proj2[0] and proj1[1] > proj2[1]):
+            if proj1[0] and proj2[0] and (proj1[0] > proj2[0] or
+                                          (proj1[0] == proj2[0] and proj1[1] > proj2[1])):
                 city.warn('Tracks seem to go in the opposite direction to stops', relation)
                 self.tracks.reverse()
             self.calculate_distances()

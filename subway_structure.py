@@ -54,35 +54,28 @@ def distance(p1, p2):
     return 6378137 * math.sqrt(dx*dx + dy*dy)
 
 
-def project_on_segment(p, p1, p2):
-    dp = (p2[0] - p1[0], p2[1] - p1[1])
-    d2 = dp[0]*dp[0] + dp[1]*dp[1]
-    u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
-    res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
-    if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
-        return None
-    return res, u
+def project_on_line(p, line):
+    def project_on_segment(p, p1, p2):
+        dp = (p2[0] - p1[0], p2[1] - p1[1])
+        d2 = dp[0]*dp[0] + dp[1]*dp[1]
+        u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
+        res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
+        if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
+            return None
+        return res
 
-
-def project_on_line_relative(p, line, start_vertex=0):
-    """Projects p on a list of coordinates and returns a tuple of (i, u, p):
-    index of vertex, a relative position [0; 1] to vertex i+1
-    and a projected point itself."""
-    result = None
+    result = NOWHERE_STOP
     if len(line) < 2:
         return result
     d_min = MAX_DISTANCE_STOP_TO_LINE * 5
     # First, check vertices in the line
-    for i in range(start_vertex, len(line)):
-        d = distance(p, line[i])
+    for vertex in line:
+        d = distance(p, vertex)
         if d < d_min:
-            if i == len(line) - 1:
-                result = i-1, 1, line[i]
-            else:
-                result = i, 0, line[i]
+            result = vertex
             d_min = d
     # And then calculate distances to each segment
-    for seg in range(start_vertex, len(line)-1):
+    for seg in range(len(line)-1):
         # Check bbox for speed
         if not ((min(line[seg][0], line[seg+1][0]) - MAX_DISTANCE_STOP_TO_LINE <= p[0] <=
                  max(line[seg][0], line[seg+1][0]) + MAX_DISTANCE_STOP_TO_LINE) and
@@ -91,18 +84,24 @@ def project_on_line_relative(p, line, start_vertex=0):
             continue
         proj = project_on_segment(p, line[seg], line[seg+1])
         if proj:
-            d = distance(p, proj[0])
+            d = distance(p, proj)
             if d < d_min:
-                result = seg, proj[1], proj[0]
+                result = proj
                 d_min = d
     return result
 
 
-def project_on_line(p, line, start_vertex=0):
-    pos = project_on_line_relative(p, line, start_vertex)
-    if not pos:
-        return NOWHERE_STOP
-    return pos[2]
+def find_segment(p, line, start_vertex=0):
+    """Returns index of a segment and a position inside it."""
+    for seg in range(start_vertex, len(line)-1):
+        if p == line[seg]:
+            return seg, 0
+        px = (p[0] - line[seg][0]) / (line[seg+1][0] - line[seg][0])
+        if 0 <= px <= 1:
+            py = (p[1] - line[seg][1]) / (line[seg+1][1] - line[seg][1])
+            if px-1e-10 <= py <= px+1e-10:
+                return seg, px
+    return None, None
 
 
 def distance_on_line(p1, p2, line, start_vertex=0):
@@ -110,38 +109,32 @@ def distance_on_line(p1, p2, line, start_vertex=0):
     of points p1 and p2. Returns a TUPLE of (d, vertex):
     d is the distance and vertex is the number of the second
     vertex, to continue calculations for the next point."""
-    pos1 = project_on_line_relative(p1, line, start_vertex)
-    if not pos1:
-        logging.warn('p1 %s is not projected', p1)
+    line_copy = line
+    seg1, pos1 = find_segment(p1, line, start_vertex)
+    if seg1 is None:
+        logging.warn('p1 %s is not projected, st=%s', p1, start_vertex)
         return None
-    pos2 = project_on_line_relative(p2, line, pos1[0])
-    if not pos2:
+    seg2, pos2 = find_segment(p2, line, seg1)
+    if seg2 is None:
         if line[0] == line[-1]:
-            logging.warn('Trying circular')
-            pos2 = project_on_line_relative(p2, line, 0)
-        if not pos2:
-            logging.warn('p2 %s is not projected, line %s to %s', p2, line[0], line[-1])
+            line = line + line[1:]
+            seg2, pos2 = find_segment(p2, line, seg1)
+        if seg2 is None:
+            logging.warn('p2 %s is not projected, st=%s', p2, start_vertex)
             return None
-    if pos2[0] < pos1[0] or (pos2[0] == pos1[0] and pos2[1] < pos1[1]):
-        logging.warn('Pos1 %s is after pos2 %s', pos1, pos2)
-        if line[0] == line[-1]:
-            # If a line is circular, calculate distance properly
-            pos2 += len(line)
-            line = line + line
-        else:
-            logging.warn('Line is not circular')
-            pos1, pos2 = pos2, pos1
-    if pos1[0] == pos2[0]:
-        return distance(line[pos1[0]], line[pos1[0]+1]) * (
-            pos2[1]-pos1[1]), pos1[0]
+    if seg1 == seg2:
+        return distance(line[seg1], line[seg1+1]) * abs(pos2-pos1), seg1
+    if seg2 < seg1:
+        # Should not happen
+        raise Exception('Pos1 %s is after pos2 %s', seg1, seg2)
     d = 0
-    if pos1[1] < 1:
-        d += distance(line[pos1[0]], line[pos1[0]+1]) * (1-pos1[1])
-    for i in range(pos1[0]+1, pos2[0]):
+    if pos1 < 1:
+        d += distance(line[seg1], line[seg1+1]) * (1-pos1)
+    for i in range(seg1+1, seg2):
         d += distance(line[i], line[i+1])
-    if pos2[1] > 0:
-        d += distance(line[pos2[0]], line[pos2[0]+1]) * pos2[1]
-    return d, pos2[0]
+    if pos2 > 0:
+        d += distance(line[seg2], line[seg2+1]) * pos2
+    return d, seg2 % len(line_copy)
 
 
 def angle_between(p1, c, p2):
@@ -348,6 +341,7 @@ class RouteStop:
     def __init__(self, stoparea):
         self.stoparea = stoparea
         self.stop = None  # Stop position (lon, lat), possibly projected
+        self.distance = 0  # In meters from the start of the route
         self.platform_entry = None  # Platform el_id
         self.platform_exit = None  # Platform el_id
         self.can_enter = False
@@ -482,8 +476,8 @@ class Route:
         if len(track) > len(last_track):
             last_track = track
         # Remove duplicate points
-        last_track = [last_track[i] for i in range(len(last_track))
-                      if last_track[i-1] != last_track[i]]
+        last_track = [last_track[i] for i in range(0, len(last_track))
+                      if i == 0 or last_track[i-1] != last_track[i]]
         return last_track, line_nodes
 
     def project_stops_on_line(self, city):
@@ -519,6 +513,20 @@ class Route:
             self.tracks = tracks_start
         elif tracks_start or tracks_end:
             self.tracks = tracks_start + self.tracks + tracks_end
+
+    def calculate_distances(self):
+        dist = 0
+        vertex = 0
+        for i, stop in enumerate(self.stops):
+            if i > 0:
+                direct = distance(stop.stop, self.stops[i-1].stop)
+                d_line = distance_on_line(self.stops[i-1].stop, stop.stop, self.tracks, vertex)
+                if d_line and direct-10 <= d_line[0] <= direct*2:
+                    vertex = d_line[1]
+                    dist += round(d_line[0])
+                else:
+                    dist += round(direct)
+            stop.distance = dist
 
     def __init__(self, relation, city, master=None):
         if not Route.is_route(relation):
@@ -602,7 +610,7 @@ class Route:
                                self.stops[repeat_pos].stoparea.id != st.id):
                             repeat_pos += 1
                         if repeat_pos >= len(self.stops):
-                            city.error('Incorrect order of {}s at {}'.format(looking_for, k),
+                            city.error('Incorrect order of {}s at {}'.format(el_type, k),
                                        relation)
                             continue
                         stop = self.stops[repeat_pos]
@@ -655,12 +663,12 @@ class Route:
                     msg = 'Angle between stops around "{}" is too narrow, {} degrees'.format(
                         self.stops[si+1].stoparea.name, angle)
                     city.error_if(angle < 20, msg, relation)
-            proj1 = project_on_line_relative(self.stops[1].stop, self.tracks)
-            proj2 = project_on_line_relative(self.stops[min(len(self.stops)-1, 3)].stop,
-                                             self.tracks)
+            proj1 = find_segment(self.stops[1].stop, self.tracks)
+            proj2 = find_segment(self.stops[min(len(self.stops)-1, 3)].stop, self.tracks)
             if proj1[0] > proj2[0] or (proj1[0] == proj2[0] and proj1[1] > proj2[1]):
                 city.warn('Tracks seem to go in the opposite direction to stops', relation)
                 self.tracks.reverse()
+            self.calculate_distances()
 
     def __len__(self):
         return len(self.stops)
@@ -682,12 +690,12 @@ class RouteMaster:
             self.ref = master['tags'].get('ref', master['tags'].get('name', None))
             try:
                 self.colour = normalize_colour(master['tags'].get('colour', None))
-            except ValueError as e:
-                city.warn(str(e), relation)
+            except ValueError:
+                pass
             try:
                 self.casing = normalize_colour(master['tags'].get('colour:casing', None))
-            except ValueError as e:
-                city.warn(str(e), relation)
+            except ValueError:
+                pass
             self.network = Route.get_network(master)
             self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
             self.name = master['tags'].get('name', None)

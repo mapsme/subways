@@ -10,7 +10,6 @@ import urllib.request
 
 from subway_structure import (
     distance,
-    distance_on_line,
     download_cities,
     find_transfers,
     get_unused_entrances_geojson,
@@ -250,7 +249,7 @@ def make_geojson(city, tracks=True):
             'type': 'Feature',
             'geometry': {
                 'type': 'Point',
-                'coordinates': st.stop,
+                'coordinates': stop,
             },
             'properties': {
                 'marker-size': 'small',
@@ -308,21 +307,10 @@ def prepare_mapsme_data(transfers, cities):
                 'itineraries': []
             }
             for i, variant in enumerate(route):
-                logging.warn('%s[%s]', route.name, i)
                 itin = []
-                time = 0
-                vertex = 0
-                for i, stop in enumerate(variant):
+                for stop in variant:
                     stops[stop.stoparea.id] = stop.stoparea
-                    itin.append([uid(stop.stoparea.id), time])
-                    if i+1 < len(variant):
-                        d = distance_on_line(stop.stop, variant[i+1].stop, variant.tracks, vertex)
-                        if not d:
-                            d = distance(stop.stop, variant[i+1].stop)
-                        else:
-                            vertex = d[1]
-                            d = d[0]
-                        time += round(d*3.6/SPEED_ON_LINE) + 20
+                    itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
                 routes['itineraries'].append({'stops': itin, 'interval': DEFAULT_INTERVAL})
             network['routes'].append(routes)
         networks.append(network)

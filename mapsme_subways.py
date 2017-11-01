@@ -10,6 +10,7 @@ import urllib.request
 
 from subway_structure import (
     distance,
+    distance_on_line,
     download_cities,
     find_transfers,
     get_unused_entrances_geojson,
@@ -306,15 +307,21 @@ def prepare_mapsme_data(transfers, cities):
                 'route_id': uid(route.id, 'r'),
                 'itineraries': []
             }
-            for variant in route:
+            for i, variant in enumerate(route):
+                logging.warn('%s[%s]', route.name, i)
                 itin = []
                 time = 0
+                vertex = 0
                 for i, stop in enumerate(variant):
                     stops[stop.stoparea.id] = stop.stoparea
                     itin.append([uid(stop.stoparea.id), time])
                     if i+1 < len(variant):
-                        # TODO: estimate segment length and calculate proper time
-                        d = distance(stop.stop, variant[i+1].stop)
+                        d = distance_on_line(stop.stop, variant[i+1].stop, variant.tracks, vertex)
+                        if not d:
+                            d = distance(stop.stop, variant[i+1].stop)
+                        else:
+                            vertex = d[1]
+                            d = d[0]
                         time += round(d*3.6/SPEED_ON_LINE) + 20
                 routes['itineraries'].append({'stops': itin, 'interval': DEFAULT_INTERVAL})
             network['routes'].append(routes)

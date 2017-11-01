@@ -3,6 +3,7 @@ import logging
 import math
 import urllib.parse
 import urllib.request
+from css_colours import normalize_colour
 from collections import Counter, defaultdict
 
 
@@ -139,7 +140,10 @@ class Station:
         self.modes = Station.get_modes(el)
         self.name = el['tags'].get('name', '?')
         self.int_name = el['tags'].get('int_name', el['tags'].get('name:en', None))
-        self.colour = el['tags'].get('colour', None)
+        try:
+            self.colour = normalize_colour(el['tags'].get('colour', None))
+        except ValueError as e:
+            city.warn(str(e), el)
         self.center = el_center(el)
         if self.center is None:
             raise Exception('Could not find center of {}'.format(el))
@@ -196,7 +200,11 @@ class StopArea:
             self.name = stop_area['tags'].get('name', self.name)
             self.int_name = stop_area['tags'].get(
                 'int_name', stop_area['tags'].get('name:en', self.int_name))
-            self.colour = stop_area['tags'].get('colour', self.colour)
+            try:
+                self.colour = normalize_colour(
+                    stop_area['tags'].get('colour')) or self.colour
+            except ValueError as e:
+                city.warn(str(e), stop_area)
 
             # If we have a stop area, add all elements from it
             warned_about_tracks = False
@@ -471,8 +479,16 @@ class Route:
         self.name = relation['tags'].get('name', None)
         if 'colour' not in relation['tags'] and 'colour' not in master_tags:
             city.warn('Missing colour on a route', relation)
-        self.colour = relation['tags'].get('colour', master_tags.get('colour', None))
-        self.casing = relation['tags'].get('colour:casing', master_tags.get('colour:casing', None))
+        try:
+            self.colour = normalize_colour(relation['tags'].get(
+                'colour', master_tags.get('colour', None)))
+        except ValueError as e:
+            city.warn(str(e), relation)
+        try:
+            self.casing = normalize_colour(relation['tags'].get(
+                'colour:casing', master_tags.get('colour:casing', None)))
+        except ValueError as e:
+            city.warn(str(e), relation)
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
@@ -604,8 +620,14 @@ class RouteMaster:
         self.has_master = master is not None
         if master:
             self.ref = master['tags'].get('ref', master['tags'].get('name', None))
-            self.colour = master['tags'].get('colour', None)
-            self.casing = master['tags'].get('colour:casing', None)
+            try:
+                self.colour = normalize_colour(master['tags'].get('colour', None))
+            except ValueError as e:
+                city.warn(str(e), relation)
+            try:
+                self.casing = normalize_colour(master['tags'].get('colour:casing', None))
+            except ValueError as e:
+                city.warn(str(e), relation)
             self.network = Route.get_network(master)
             self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
             self.name = master['tags'].get('name', None)

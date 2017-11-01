@@ -152,12 +152,14 @@ def dump_data(city, f):
         elif isinstance(data, dict):
             f.write('\n')
             for k, v in data.items():
+                if v is None:
+                    continue
                 f.write(indent + str(k) + ': ')
                 write_yaml(v, f, indent + '  ')
                 if isinstance(v, (list, set, dict)):
                     f.write('\n')
-        elif data is not None:
-            f.write(data)
+        else:
+            f.write(str(data))
             f.write('\n')
 
     INCLUDE_STOP_AREAS = False
@@ -282,6 +284,9 @@ def prepare_mapsme_data(transfers, cities):
             raise Exception('Got {}, expected {}'.format(elid, typ))
         return osm_id << 1
 
+    def format_colour(c):
+        return c[1:] if c else None
+
     stops = {}  # el_id -> station data
     networks = []
     for city in cities:
@@ -292,8 +297,8 @@ def prepare_mapsme_data(transfers, cities):
                 'type': route.mode,
                 'ref': route.ref,
                 'name': route.name,
-                'colour': route.colour,
-                'casing': route.casing,
+                'colour': format_colour(route.colour),
+                'casing': format_colour(route.casing),
                 'route_id': uid(route.id, 'r'),
                 'itineraries': []
             }

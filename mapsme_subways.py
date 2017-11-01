@@ -9,6 +9,7 @@ import urllib.parse
 import urllib.request
 
 from subway_structure import (
+    distance,
     download_cities,
     find_transfers,
     get_unused_entrances_geojson,
@@ -272,6 +273,10 @@ def make_geojson(city, tracks=True):
 
 
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
+SPEED_TO_ENTRANCE = 4  # km/h
+SPEED_ON_TRANSFER = 3.5
+SPEED_ON_LINE = 40
+DEFAULT_INTERVAL = 150  # seconds
 
 
 def prepare_mapsme_data(transfers, cities):
@@ -304,11 +309,14 @@ def prepare_mapsme_data(transfers, cities):
             for variant in route:
                 itin = []
                 time = 0
-                for stop in variant:
+                for i, stop in enumerate(variant):
                     stops[stop.stoparea.id] = stop.stoparea
                     itin.append([uid(stop.stoparea.id), time])
-                    time += 60
-                routes['itineraries'].append({'stops': itin, 'interval': 150})
+                    if i+1 < len(variant):
+                        # TODO: estimate segment length and calculate proper time
+                        d = distance(stop.stop, variant[i+1].stop)
+                        time += round(d*3.6/SPEED_ON_LINE) + 20
+                routes['itineraries'].append({'stops': itin, 'interval': DEFAULT_INTERVAL})
             network['routes'].append(routes)
         networks.append(network)
 
@@ -332,7 +340,8 @@ def prepare_mapsme_data(transfers, cities):
                         'node_id': int(e[1:]),
                         'lon': stop.centers[e][0],
                         'lat': stop.centers[e][1],
-                        'distance': 60
+                        'distance': round(distance(
+                            stop.centers[e], stop.center)*3.6/SPEED_TO_ENTRANCE)
                     })
         m_stops.append(st)
 
@@ -345,7 +354,8 @@ def prepare_mapsme_data(transfers, cities):
                     c_transfers.append([
                         uid(t[t_first].id),
                         uid(t[t_second].id),
-                        60
+                        round(distance(t[t_first].center,
+                                       t[t_second].center)*3.6/SPEED_ON_TRANSFER)
                     ])
 
     result = {

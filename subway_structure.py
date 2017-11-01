@@ -605,7 +605,7 @@ class Route:
     def __len__(self):
         return len(self.stops)
 
-    def __get__(self, i):
+    def __getitem__(self, i):
         return self.stops[i]
 
     def __iter__(self):
@@ -684,7 +684,7 @@ class RouteMaster:
     def __len__(self):
         return len(self.routes)
 
-    def __get__(self, i):
+    def __getitem__(self, i):
         return self.routes[i]
 
     def __iter__(self):

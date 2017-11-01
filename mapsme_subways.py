@@ -290,8 +290,7 @@ def prepare_mapsme_data(transfers, cities):
     stops = {}  # el_id -> station data
     networks = []
     for city in cities:
-        agency_id = 0  # TODO
-        network = {'network': city.name, 'routes': [], 'agency_id': agency_id}
+        network = {'network': city.name, 'routes': [], 'agency_id': city.id}
         for route in city:
             routes = {
                 'type': route.mode,

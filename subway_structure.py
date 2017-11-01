@@ -693,15 +693,19 @@ class RouteMaster:
 
 class City:
     def __init__(self, row):
-        self.name = row[0]
-        self.country = row[1]
-        self.continent = row[2]
-        self.num_stations = int(row[3])
-        self.num_lines = int(row[4] or '0')
-        self.num_light_lines = int(row[5] or '0')
-        self.num_interchanges = int(row[6] or '0')
-        self.networks = set(filter(None, [x.strip() for x in row[8].split(';')]))
-        bbox = row[7].split(',')
+        self.name = row[1]
+        self.country = row[2]
+        self.continent = row[3]
+        if not row[0]:
+            self.error('City {} does not have an id'.format(self.name))
+        self.id = int(row[0] or '0')
+        self.num_stations = int(row[4])
+        self.num_lines = int(row[5] or '0')
+        self.num_light_lines = int(row[6] or '0')
+        self.num_interchanges = int(row[7] or '0')
+        self.networks = [] if len(row) <= 9 else set(filter(
+            None, [x.strip() for x in row[9].split(';')]))
+        bbox = row[8].split(',')
         if len(bbox) == 4:
             self.bbox = [float(bbox[i]) for i in (1, 0, 3, 2)]
         else:
@@ -997,7 +1001,7 @@ def download_cities():
     names = set()
     cities = []
     for row in r:
-        if len(row) > 7 and row[7]:
+        if len(row) > 8 and row[8]:
             cities.append(City(row))
             if row[0].strip() in names:
                 logging.warning('Duplicate city name in the google spreadsheet: %s', row[0])

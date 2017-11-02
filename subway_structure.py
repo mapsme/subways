@@ -129,7 +129,7 @@ def distance_on_line(p1, p2, line, start_vertex=0):
     line_copy = line
     seg1, pos1 = find_segment(p1, line, start_vertex)
     if seg1 is None:
-        logging.warn('p1 %s is not projected, st=%s', p1, start_vertex)
+        # logging.warn('p1 %s is not projected, st=%s', p1, start_vertex)
         return None
     seg2, pos2 = find_segment(p2, line, seg1)
     if seg2 is None:
@@ -137,7 +137,7 @@ def distance_on_line(p1, p2, line, start_vertex=0):
             line = line + line[1:]
             seg2, pos2 = find_segment(p2, line, seg1)
         if seg2 is None:
-            logging.warn('p2 %s is not projected, st=%s', p2, start_vertex)
+            # logging.warn('p2 %s is not projected, st=%s', p2, start_vertex)
             return None
     if seg1 == seg2:
         return distance(line[seg1], line[seg1+1]) * abs(pos2-pos1), seg1

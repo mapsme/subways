@@ -207,6 +207,7 @@ class Station:
         try:
             self.colour = normalize_colour(el['tags'].get('colour', None))
         except ValueError as e:
+            self.colour = None
             city.warn(str(e), el)
         self.center = el_center(el)
         if self.center is None:
@@ -562,11 +563,13 @@ class Route:
             self.colour = normalize_colour(relation['tags'].get(
                 'colour', master_tags.get('colour', None)))
         except ValueError as e:
+            self.colour = None
             city.warn(str(e), relation)
         try:
             self.casing = normalize_colour(relation['tags'].get(
                 'colour:casing', master_tags.get('colour:casing', None)))
         except ValueError as e:
+            self.casing = None
             city.warn(str(e), relation)
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
@@ -709,11 +712,11 @@ class RouteMaster:
             try:
                 self.colour = normalize_colour(master['tags'].get('colour', None))
             except ValueError:
-                pass
+                self.colour = None
             try:
                 self.casing = normalize_colour(master['tags'].get('colour:casing', None))
             except ValueError:
-                pass
+                self.colour = None
             self.network = Route.get_network(master)
             self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
             self.name = master['tags'].get('name', None)

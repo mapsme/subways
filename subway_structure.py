@@ -651,8 +651,8 @@ class Route:
                     city.error('{} {} {} for route relation is not in the dataset'.format(
                         m['role'], m['type'], m['ref']), relation)
                     raise Exception('Stop or platform {} {} in relation {} '
-                                    'is not in the dataset'.format(
-                                        m['type'], m['ref'], relation['id']))
+                                    'is not in the dataset for {}'.format(
+                                        m['type'], m['ref'], relation['id'], city.name))
                 continue
             el = city.elements[k]
             if 'tags' not in el:

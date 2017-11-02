@@ -1030,7 +1030,7 @@ class City:
             msg = 'Found {} interchanges, expected {}'.format(
                 self.found_interchanges, self.num_interchanges)
             self.error_if(self.num_interchanges != 0 and not
-                          (0 <= (self.num_interchanges - self.found_interchanges) /
+                          ((self.num_interchanges - self.found_interchanges) /
                            self.num_interchanges <= ALLOWED_TRANSFERS_MISMATCH), msg)
 
         self.found_networks = len(networks)

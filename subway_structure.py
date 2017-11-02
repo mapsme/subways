@@ -98,14 +98,26 @@ def project_on_line(p, line):
 
 def find_segment(p, line, start_vertex=0):
     """Returns index of a segment and a position inside it."""
+    EPS = 1e-9
     for seg in range(start_vertex, len(line)-1):
         if is_near(p, line[seg]):
             return seg, 0
-        px = (p[0] - line[seg][0]) / (line[seg+1][0] - line[seg][0])
-        if 0 <= px <= 1:
-            py = (p[1] - line[seg][1]) / (line[seg+1][1] - line[seg][1])
-            if px-1e-10 <= py <= px+1e-10:
-                return seg, px
+        if line[seg][0] == line[seg+1][0]:
+            if not (p[0]-EPS <= line[seg][0] <= p[0]+EPS):
+                continue
+            px = None
+        else:
+            px = (p[0] - line[seg][0]) / (line[seg+1][0] - line[seg][0])
+        if px is None or (0 <= px <= 1):
+            if line[seg][1] == line[seg+1][1]:
+                if not (p[1]-EPS <= line[seg][1] <= p[1]+EPS):
+                    continue
+                py = None
+            else:
+                py = (p[1] - line[seg][1]) / (line[seg+1][1] - line[seg][1])
+            if py is None or (0 <= py <= 1):
+                if py is None or px is None or (px-EPS <= py <= px+EPS):
+                    return seg, px or py
     return None, None
 
 

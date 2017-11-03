@@ -7,3 +7,4 @@ html/
 *.osm
 *.swp
 *.yaml
+*.pyc

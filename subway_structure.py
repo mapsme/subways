@@ -566,10 +566,10 @@ class Route:
             self.colour = None
             city.warn(str(e), relation)
         try:
-            self.casing = normalize_colour(relation['tags'].get(
-                'colour:casing', master_tags.get('colour:casing', None)))
+            self.infill = normalize_colour(relation['tags'].get(
+                'colour:infill', master_tags.get('colour:infill', None)))
         except ValueError as e:
-            self.casing = None
+            self.infill = None
             city.warn(str(e), relation)
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
@@ -714,7 +714,7 @@ class RouteMaster:
             except ValueError:
                 self.colour = None
             try:
-                self.casing = normalize_colour(master['tags'].get('colour:casing', None))
+                self.infill = normalize_colour(master['tags'].get('colour:infill', None))
             except ValueError:
                 self.colour = None
             self.network = Route.get_network(master)
@@ -723,7 +723,7 @@ class RouteMaster:
         else:
             self.ref = None
             self.colour = None
-            self.casing = None
+            self.infill = None
             self.network = None
             self.mode = None
             self.name = None
@@ -741,11 +741,11 @@ class RouteMaster:
             city.warn('Route "{}" has different colour from master "{}"'.format(
                 route.colour, self.colour), route.element)
 
-        if not self.casing:
-            self.casing = route.casing
-        elif route.casing and route.casing != self.casing:
-            city.warn('Route "{}" has different casing colour from master "{}"'.format(
-                route.casing, self.casing), route.element)
+        if not self.infill:
+            self.infill = route.infill
+        elif route.infill and route.infill != self.infill:
+            city.warn('Route "{}" has different infill colour from master "{}"'.format(
+                route.infill, self.infill), route.element)
 
         if not self.ref:
             self.ref = route.ref

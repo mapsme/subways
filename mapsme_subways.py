@@ -172,7 +172,7 @@ def dump_data(city, f):
             'ref': route.ref,
             'name': route.name,
             'colour': route.colour,
-            'casing': route.casing,
+            'infill': route.infill,
             'itineraries': []
         }
         for variant in route:
@@ -302,10 +302,12 @@ def prepare_mapsme_data(transfers, cities):
                 'ref': route.ref,
                 'name': route.name,
                 'colour': format_colour(route.colour),
-                'casing': format_colour(route.casing),
                 'route_id': uid(route.id, 'r'),
                 'itineraries': []
             }
+            if route.infill:
+                routes['casing'] = routes['colour']
+                routes['colour'] = format_colour(route.infill)
             for i, variant in enumerate(route):
                 itin = []
                 for stop in variant:

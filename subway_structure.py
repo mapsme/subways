@@ -464,6 +464,8 @@ class Route:
                 city.error('Cannot find nodes in a railway', el)
                 continue
             nodes = ['n{}'.format(n) for n in el['nodes']]
+            if m['role'] == 'backward':
+                nodes.reverse()
             line_nodes.update(nodes)
             if not track:
                 is_first = True

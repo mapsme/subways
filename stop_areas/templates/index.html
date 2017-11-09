@@ -50,7 +50,8 @@
             L.DomEvent.on(link, 'click', L.DomEvent.stop)
                       .on(link, 'click', function () {
                         if (!box) return;
-                        bbox = box.getBounds().toBBoxString();
+                        var b = box.getBounds(),
+                            bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].join(',')
                         window.open('{{ url_for('convert') }}?bbox='+bbox, 'stop_area');
                       });
 

@@ -13,9 +13,7 @@ def form():
 
 @app.route('/process', methods=['GET'])
 def convert():
-    bbox = request.args.get('bbox').split(',')
-    bbox_r = ','.join([bbox[i] for i in (1, 0, 3, 2)])
-    src = overpass_request(bbox_r)
+    src = overpass_request(request.args.get('bbox'))
     if not src:
         return 'No data from overpass, sorry.'
     result = add_stop_areas(src)

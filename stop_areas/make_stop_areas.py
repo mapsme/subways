@@ -13,20 +13,20 @@ import urllib.request
 QUERY = """
 [out:json][timeout:250][bbox:{{bbox}}];
 (
-    node["railway"="subway_entrance"];
-    node["station"="subway"];
-    node["station"="light_rail"];
-    node["public_transport"="stop_position"]["train"="yes"];
-    node["public_transport"="stop_position"]["subway"="yes"];
-    way["station"="subway"];
-    relation["station"="subway"];
-    way["railway"="platform"];
-    relation["railway"="platform"];
-    relation[route="subway"];
-    relation[route="light_rail"];
+  relation["route"="subway"];<<;
+  relation["route"="light_rail"];<<;
+  relation["public_transport"="stop_area"];<<;
+  way["station"="subway"];
+  way["station"="light_rail"];
+  node["railway"="station"]["subway"="yes"];
+  node["railway"="station"]["light_rail"="yes"];
+  node["station"="subway"];
+  node["station"="light_rail"];
+  node["railway"="subway_entrance"];
+  node["public_transport"]["subway"="yes"];
+  node["public_transport"]["light_rail"="yes"];
 );
 (._;>;);
-(._;rel(bn););
 out meta center qt;
 """
 
@@ -93,6 +93,9 @@ def add_stop_areas(src):
     for el in src:
         if 'tags' in el and el['tags'].get('station', None) in ('subway', 'light_rail'):
             stations.add(StationWrapper(el))
+
+    if stations.is_leaf:
+        raise Exception('No stations found')
 
     # Populate a list of nearby subway exits and platforms for each station
     MAX_DISTANCE = 300  # meters
@@ -174,7 +177,7 @@ if __name__ == '__main__':
         print('Usage: {} {{<export.json>|<bbox>}} [output.osm]'.format(sys.argv[0]))
         sys.exit(1)
 
-    if re.match(r'', sys.argv[1]):
+    if re.match(r'^[-0-9.,]+$', sys.argv[1]):
         src = overpass_request(sys.argv[1])
     else:
         with open(sys.argv[1], 'r') as f:

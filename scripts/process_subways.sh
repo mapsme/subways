@@ -64,8 +64,8 @@ PLANET_ABS="$(cd "$(dirname "$PLANET")"; pwd)/$(basename "$PLANET")"
 # Filtering it
 
 FILTERED_DATA="$TMPDIR/subways.osm"
-QRELATIONS="route=subway =light_rail =monorail route_master=subway =light_rail =monorail public_transport=stop_area =stop_area_group"
-QNODES="station=subway =light_rail =monorail railway=subway_entrance subway=yes light_rail=yes monorail=yes"
+QRELATIONS="route=subway =light_rail =monorail =train route_master=subway =light_rail =monorail =train public_transport=stop_area =stop_area_group"
+QNODES="railway=station station=subway =light_rail =monorail railway=subway_entrance subway=yes light_rail=yes monorail=yes train=yes"
 "$OSMCTOOLS/osmfilter" "$PLANET" --keep= --keep-relations="$QRELATIONS" --keep-nodes="$QNODES" --drop-author "-o=$FILTERED_DATA"
 
 # Running the validation

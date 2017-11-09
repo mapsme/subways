@@ -8,12 +8,17 @@ from collections import Counter, defaultdict
 
 
 SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
-MODES = ('subway', 'light_rail', 'monorail')
 MAX_DISTANCE_NEARBY = 150  # in meters
 MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
 MIN_ANGLE_BETWEEN_STOPS = 45  # in degrees
+
+DEFAULT_MODES = set(('subway', 'light_rail'))
+ALL_MODES = set(('subway', 'light_rail', 'monorail', 'train', 'tram',
+                 'bus', 'trolleybus', 'aerialway', 'ferry'))
+RAILWAY_TYPES = set(('rail', 'light_rail', 'subway', 'narrow_gauge',
+                     'funicular', 'monorail', 'tram'))
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
 NOWHERE_STOP = (0, 0)  # too far away from any metro system
 
@@ -172,19 +177,20 @@ class Station:
     def get_modes(el):
         mode = el['tags'].get('station')
         modes = [] if not mode else [mode]
-        for m in MODES:
+        for m in ALL_MODES:
             if el['tags'].get(m) == 'yes':
                 modes.append(m)
         return set(modes)
 
     @staticmethod
-    def is_station(el):
+    def is_station(el, modes=DEFAULT_MODES):
         if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             return False
         for k in CONSTRUCTION_KEYS:
             if k in el['tags']:
                 return False
-        if Station.get_modes(el).isdisjoint(MODES):
+        # Not checking for station=train, obviously
+        if 'train' not in modes and Station.get_modes(el).isdisjoint(modes):
             return False
         return True
 
@@ -193,7 +199,7 @@ class Station:
         if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             raise Exception(
                 'Station object should be instantiated from a station node. Got: {}'.format(el))
-        if not Station.is_station(el):
+        if not Station.is_station(el, city.modes):
             raise Exception('Processing only subway and light rail stations')
 
         if el['type'] != 'node':
@@ -239,9 +245,7 @@ class StopArea:
     def is_track(el):
         if el['type'] != 'way' or 'tags' not in el:
             return False
-        if el['tags'].get('railway') == 'rail':
-            return True
-        return el['tags'].get('railway') in MODES
+        return el['tags'].get('railway') in RAILWAY_TYPES
 
     def __init__(self, station, city, stop_area=None):
         """Call this with a Station object."""
@@ -277,7 +281,7 @@ class StopArea:
                 k = el_id(m)
                 m_el = city.elements.get(k)
                 if m_el and 'tags' in m_el:
-                    if Station.is_station(m_el):
+                    if Station.is_station(m_el, city.modes):
                         if k != station.id:
                             city.error('Stop area has multiple stations', stop_area)
                     elif StopArea.is_stop(m_el):
@@ -369,12 +373,12 @@ class RouteStop:
         self.seen_station = False
 
     @staticmethod
-    def get_member_type(el, role):
+    def get_member_type(el, role, modes=DEFAULT_MODES):
         if StopArea.is_stop(el):
             return 'stop'
         elif StopArea.is_platform(el):
             return 'platform'
-        elif Station.is_station(el):
+        elif Station.is_station(el, modes):
             if 'platform' in role:
                 return 'platform'
             else:
@@ -394,7 +398,7 @@ class RouteStop:
             if 'exit_only' not in role:
                 self.can_enter = True
 
-        elif Station.is_station(el):
+        elif Station.is_station(el, city.modes):
             if not self.seen_stop and not self.seen_platform:
                 self.stop = el_center(el)
                 self.can_enter = True
@@ -416,7 +420,7 @@ class RouteStop:
             city.error('Not a stop or platform in a route relation', el)
 
         multiple_check = False
-        el_type = RouteStop.get_member_type(el, role)
+        el_type = RouteStop.get_member_type(el, role, city.modes)
         if el_type == 'platform':
             multiple_check = self.seen_platform
             self.seen_platform = True
@@ -433,12 +437,12 @@ class RouteStop:
 class Route:
     """The longest route for a city with a unique ref."""
     @staticmethod
-    def is_route(el):
+    def is_route(el, modes=DEFAULT_MODES):
         if el['type'] != 'relation' or el.get('tags', {}).get('type') != 'route':
             return False
         if 'members' not in el:
             return False
-        if el['tags'].get('route') not in MODES:
+        if el['tags'].get('route') not in modes:
             return False
         for k in CONSTRUCTION_KEYS:
             if k in el['tags']:
@@ -549,7 +553,7 @@ class Route:
             stop.distance = dist
 
     def __init__(self, relation, city, master=None):
-        if not Route.is_route(relation):
+        if not Route.is_route(relation, city.modes):
             raise Exception('The relation does not seem a route: {}'.format(relation))
         master_tags = {} if not master else master['tags']
         self.element = relation
@@ -598,7 +602,7 @@ class Route:
                     city.error('Ambigous station {} in route. Please use stop_position or split '
                                'interchange stations'.format(st.name), relation)
                 el = city.elements[k]
-                el_type = RouteStop.get_member_type(el, m['role'])
+                el_type = RouteStop.get_member_type(el, m['role'], city.modes)
                 if el_type:
                     if repeat_pos is None:
                         if not self.stops or st not in stations:
@@ -794,13 +798,25 @@ class City:
         self.num_lines = int(row[5] or '0')
         self.num_light_lines = int(row[6] or '0')
         self.num_interchanges = int(row[7] or '0')
-        self.networks = [] if len(row) <= 9 else set(filter(
-            None, [x.strip() for x in row[9].split(';')]))
+
+        # Aquiring list of networks and modes
+        networks = None if len(row) <= 9 else row[9].split(':')
+        if not networks:
+            self.networks = []
+        else:
+            self.networks = set(filter(None, [x.strip() for x in networks[-1].split(';')]))
+        if not networks or len(networks) < 2:
+            self.modes = DEFAULT_MODES
+        else:
+            self.modes = set([x.strip() for x in networks[0].split(',')])
+
+        # Reversing bbox so it is (xmin, ymin, xmax, ymax)
         bbox = row[8].split(',')
         if len(bbox) == 4:
             self.bbox = [float(bbox[i]) for i in (1, 0, 3, 2)]
         else:
             self.bbox = None
+
         self.elements = {}   # Dict el_id → el
         self.stations = defaultdict(list)   # Dict el_id → list of stop areas
         self.routes = {}     # Dict route_ref → route
@@ -901,7 +917,7 @@ class City:
         # Extract stations
         processed_stop_areas = set()
         for el in self.elements.values():
-            if Station.is_station(el):
+            if Station.is_station(el, self.modes):
                 st = Station(el, self)
                 self.station_ids.add(st.id)
                 if st.id in self.stop_areas:
@@ -927,7 +943,7 @@ class City:
 
         # Extract routes
         for el in self.elements.values():
-            if Route.is_route(el):
+            if Route.is_route(el, self.modes):
                 route_id = el_id(el)
                 master = self.masters.get(route_id, None)
                 if self.networks:

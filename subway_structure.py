@@ -453,7 +453,10 @@ class Route:
 
     @staticmethod
     def get_network(relation):
-        return relation['tags'].get('network', relation['tags'].get('operator', None))
+        for k in ('network:metro', 'network', 'operator'):
+            if k in relation['tags']:
+                return relation['tags'][k]
+        return None
 
     def build_longest_line(self, relation, city):
         line_nodes = set()
@@ -801,11 +804,11 @@ class City:
 
         # Aquiring list of networks and modes
         networks = None if len(row) <= 9 else row[9].split(':')
-        if not networks:
+        if not networks or len(networks[-1]) == 0:
             self.networks = []
         else:
             self.networks = set(filter(None, [x.strip() for x in networks[-1].split(';')]))
-        if not networks or len(networks) < 2:
+        if not networks or len(networks) < 2 or len(networks[0]) == 0:
             self.modes = DEFAULT_MODES
         else:
             self.modes = set([x.strip() for x in networks[0].split(',')])

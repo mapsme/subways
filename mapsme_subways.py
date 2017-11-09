@@ -199,7 +199,7 @@ def dump_data(city, f):
 
     result = {
         'stations': sorted(stops),
-        'transfers': transfers,
+        'transfers': sorted(transfers, key=lambda t: t[0]),
         'routes': sorted(routes, key=lambda r: r['ref']),
     }
     write_yaml(result, f)

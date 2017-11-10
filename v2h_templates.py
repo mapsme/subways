@@ -29,6 +29,10 @@ th {
 .color1 {
   background: lightgreen;
 }
+.hlink {
+  color: #888;
+  opacity: 0.5;
+}
 </style>
 '''
 
@@ -119,8 +123,8 @@ COUNTRY_HEADER = '''
 '''.replace('(s)', STYLE)
 
 COUNTRY_CITY = '''
-<tr>
-<td class="bold color{good_cities}">{city}</td>
+<tr id="{slug}">
+<td class="bold color{good_cities}">{city}{?yaml} <a href="{yaml}" class="hlink">Y</a>{end}{?json} <a href="{json}" class="hlink">J</a>{end}</td>
 <td class="color{=subwayl}">sub: {subwayl_found} / {subwayl_expected}</td>
 <td class="color{=lightrl}">lr: {lightrl_found} / {lightrl_expected}</td>
 <td class="color{=stations}">st: {stations_found} / {stations_expected}</td>

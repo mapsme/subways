@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -272,6 +273,10 @@ def make_geojson(city, tracks=True):
     return {'type': 'FeatureCollection', 'features': features}
 
 
+def slugify(name):
+    return re.sub(r'[^a-z0-9_-]+', '', name.lower().replace(' ', '_'))
+
+
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
 SPEED_TO_ENTRANCE = 4  # km/h
 SPEED_ON_TRANSFER = 3.5
@@ -279,7 +284,7 @@ SPEED_ON_LINE = 40
 DEFAULT_INTERVAL = 150  # seconds
 
 
-def prepare_mapsme_data(transfers, cities):
+def prepare_mapsme_data(transfers, cities, cache_name):
     def uid(elid, typ=None):
         t = elid[0]
         osm_id = int(elid[1:])
@@ -292,8 +297,20 @@ def prepare_mapsme_data(transfers, cities):
     def format_colour(c):
         return c[1:] if c else None
 
+    cache = {}
+    if cache_name:
+        with open(cache_name, 'r', encoding='utf-8') as f:
+            cache = json.load(f)
+
     stops = {}  # el_id -> station data
     networks = []
+
+    good_cities = set([c.name for c in cities])
+    for city_name, data in cache.items():
+        if city_name in good_cities:
+            continue
+        # TODO: get a network, stops and transfers from cache
+
     for city in cities:
         network = {'network': city.name, 'routes': [], 'agency_id': city.id}
         for route in city:
@@ -355,6 +372,10 @@ def prepare_mapsme_data(transfers, cities):
                                        t[t_second].center)*3.6/SPEED_ON_TRANSFER)
                     ])
 
+    if cache_name:
+        with open(cache_name, 'w', encoding='utf-8') as f:
+            json.dump(cache, f)
+
     result = {
         'stops': m_stops,
         'transfers': c_transfers,
@@ -379,10 +400,9 @@ if __name__ == '__main__':
                         help='Validation JSON file name')
     parser.add_argument('-o', '--output', type=argparse.FileType('w', encoding='utf-8'),
                         help='JSON file for MAPS.ME')
-    parser.add_argument('-d', '--dump', type=argparse.FileType('w', encoding='utf-8'),
-                        help='Make a YAML file for a city data')
-    parser.add_argument('-j', '--json', type=argparse.FileType('w', encoding='utf-8'),
-                        help='Make a GeoJSON file for a city data')
+    parser.add_argument('--cache', help='Cache file name for MAPS.ME data')
+    parser.add_argument('-d', '--dump', help='Make a YAML file for a city data')
+    parser.add_argument('-j', '--json', help='Make a GeoJSON file for a city data')
     parser.add_argument('--crude', action='store_true',
                         help='Do not use OSM railway geometry for GeoJSON')
     options = parser.parse_args()
@@ -451,26 +471,42 @@ if __name__ == '__main__':
 
     logging.info('%s good cities: %s', len(good_cities), ', '.join([c.name for c in good_cities]))
 
-    if options.log:
-        res = [x.get_validation_result() for x in cities]
-        json.dump(res, options.log)
-
     if options.entrances:
         json.dump(get_unused_entrances_geojson(osm), options.entrances)
 
     if options.dump:
-        if len(cities) == 1:
-            dump_data(cities[0], options.dump)
+        if os.path.isdir(options.dump):
+            for c in cities:
+                with open(os.path.join(options.dump, slugify(c.name) + '.yaml'),
+                          'w', encoding='utf-8') as f:
+                    dump_data(c, f)
+        elif len(cities) == 1:
+            with open(options.dump, 'w', encoding='utf-8') as f:
+                dump_data(cities[0], f)
         else:
             logging.error('Cannot dump %s cities at once', len(cities))
 
     if options.json:
-        if len(cities) == 1:
-            json.dump(make_geojson(cities[0], not options.crude), options.json)
+        if os.path.isdir(options.json):
+            for c in cities:
+                with open(os.path.join(options.dump, slugify(c.name) + '.geojson'),
+                          'w', encoding='utf-8') as f:
+                    json.dump(make_geojson(c, not options.crude), f)
+        elif len(cities) == 1:
+            with open(options.json, 'w', encoding='utf-8') as f:
+                json.dump(make_geojson(cities[0], not options.crude), f)
         else:
             logging.error('Cannot make a json of %s cities at once', len(cities))
 
+    if options.log:
+        res = []
+        for c in cities:
+            v = c.get_validation_result()
+            v['slug'] = slugify(c.name)
+            res.append(v)
+        json.dump(res, options.log)
+
     # Finally, prepare a JSON file for MAPS.ME
     if options.output:
-        json.dump(prepare_mapsme_data(transfers, good_cities), options.output,
-                  indent=1, ensure_ascii=False)
+        json.dump(prepare_mapsme_data(transfers, good_cities, options.cache),
+                  options.output, indent=1, ensure_ascii=False)

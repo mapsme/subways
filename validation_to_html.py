@@ -19,7 +19,9 @@ class CityData:
             'num_errors': 0,
             'num_warnings': 0
         }
+        self.slug = None
         if city:
+            self.slug = city['slug']
             self.country = city['country']
             self.continent = city['continent']
             self.errors = city['errors']
@@ -50,6 +52,7 @@ class CityData:
 
         for k in self.data:
             s = s.replace('{'+k+'}', str(self.data[k]))
+        s = s.replace('{slug}', self.slug or '')
         for k in ('subwayl', 'lightrl', 'stations', 'transfers'):
             s = s.replace('{='+k+'}',
                           test_eq(self.data[k+'_found'], self.data[k+'_expected']))
@@ -66,7 +69,9 @@ def tmpl(s, data=None, **kwargs):
         s = data.format(s)
     if kwargs:
         for k, v in kwargs.items():
-            s = s.replace('{'+k+'}', v)
+            if v is not None:
+                s = s.replace('{'+k+'}', str(v))
+            s = re.sub(r'\{\?'+k+r'\}(.+?)\{end\}', r'\1' if v else '', s)
     s = s.replace('{date}', date)
     google_url = 'https://docs.google.com/spreadsheets/d/{}/edit?usp=sharing'.format(SPREADSHEET_ID)
     s = s.replace('{google}', google_url)
@@ -129,10 +134,15 @@ for continent in sorted(continents.keys()):
         country_file.write(tmpl(COUNTRY_HEADER, country=country, continent=continent))
         for name, city in sorted(data.items()):
             if city.country == country:
+                file_base = os.path.join(path, city.slug)
+                yaml_file = city.slug + '.yaml' if os.path.exists(file_base + '.yaml') else None
+                json_file = city.slug + '.geojson' if os.path.exists(
+                    file_base + '.geojson') else None
                 e = '<br>'.join([osm_links(esc(e)) for e in city.errors])
                 w = '<br>'.join([osm_links(esc(w)) for w in city.warnings])
                 country_file.write(tmpl(COUNTRY_CITY, city,
                                         city=name, country=country, continent=continent,
+                                        yaml=yaml_file, json=json_file,
                                         errors=e, warnings=w))
         country_file.write(tmpl(COUNTRY_FOOTER, country=country, continent=continent))
         country_file.close()

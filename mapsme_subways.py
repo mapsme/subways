@@ -278,10 +278,10 @@ def slugify(name):
 
 
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
-SPEED_TO_ENTRANCE = 4  # km/h
+SPEED_TO_ENTRANCE = 3  # km/h
 SPEED_ON_TRANSFER = 3.5
 SPEED_ON_LINE = 40
-DEFAULT_INTERVAL = 150  # seconds
+DEFAULT_INTERVAL = 2.5  # minutes
 
 
 def prepare_mapsme_data(transfers, cities, cache_name):
@@ -330,7 +330,10 @@ def prepare_mapsme_data(transfers, cities, cache_name):
                 for stop in variant:
                     stops[stop.stoparea.id] = stop.stoparea
                     itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
-                routes['itineraries'].append({'stops': itin, 'interval': DEFAULT_INTERVAL})
+                routes['itineraries'].append({
+                    'stops': itin,
+                    'interval': round((variant.interval or DEFAULT_INTERVAL) * 60)
+                })
             network['routes'].append(routes)
         networks.append(network)
 
@@ -354,7 +357,7 @@ def prepare_mapsme_data(transfers, cities, cache_name):
                         'node_id': int(e[1:]),
                         'lon': stop.centers[e][0],
                         'lat': stop.centers[e][1],
-                        'distance': round(distance(
+                        'distance': 60 + round(distance(
                             stop.centers[e], stop.center)*3.6/SPEED_TO_ENTRANCE)
                     })
         m_stops.append(st)

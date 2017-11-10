@@ -304,6 +304,8 @@ class StopArea:
             center = station.center
             for c_el in city.elements.values():
                 c_id = el_id(c_el)
+                if c_id in city.stop_areas:
+                    continue
                 c_center = el_center(c_el)
                 if 'tags' not in c_el or not c_center:
                     continue
@@ -458,6 +460,25 @@ class Route:
                 return relation['tags'][k]
         return None
 
+    @staticmethod
+    def get_interval(tags):
+        v = None
+        for k in ('interval', 'headway'):
+            if k in tags:
+                v = tags[k]
+                break
+            else:
+                for kk in tags:
+                    if kk.startswith(k+':'):
+                        v = tags[kk]
+                        break
+        if not v:
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            return None
+
     def build_longest_line(self, relation, city):
         line_nodes = set()
         last_track = []
@@ -582,6 +603,7 @@ class Route:
             city.warn(str(e), relation)
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
+        self.interval = Route.get_interval(relation['tags']) or Route.get_interval(master_tags)
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
         tracks, line_nodes = self.build_longest_line(relation, city)
         self.tracks = [el_center(city.elements.get(k)) for k in tracks]
@@ -604,6 +626,7 @@ class Route:
                 if len(st_list) > 1:
                     city.error('Ambigous station {} in route. Please use stop_position or split '
                                'interchange stations'.format(st.name), relation)
+                    # city.error(', '.join([x.id for x in st_list]))
                 el = city.elements[k]
                 el_type = RouteStop.get_member_type(el, m['role'], city.modes)
                 if el_type:
@@ -716,6 +739,7 @@ class RouteMaster:
         self.best = None
         self.id = el_id(master)
         self.has_master = master is not None
+        self.interval_from_master = False
         if master:
             self.ref = master['tags'].get('ref', master['tags'].get('name', None))
             try:
@@ -729,6 +753,8 @@ class RouteMaster:
             self.network = Route.get_network(master)
             self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
             self.name = master['tags'].get('name', None)
+            self.interval = Route.get_interval(master['tags'])
+            self.interval_from_master = self.interval is not None
         else:
             self.ref = None
             self.colour = None
@@ -736,6 +762,7 @@ class RouteMaster:
             self.network = None
             self.mode = None
             self.name = None
+            self.interval = None
 
     def add(self, route, city):
         if not self.network:
@@ -771,6 +798,12 @@ class RouteMaster:
             city.error('Incompatible PT mode: master has {} and route has {}'.format(
                 self.mode, route.mode), route.element)
             return
+
+        if not self.interval_from_master and route.interval:
+            if not self.interval:
+                self.interval = route.interval
+            else:
+                self.interval = min(self.interval, route.interval)
 
         if not self.has_master and (not self.id or self.id > route.id):
             self.id = route.id

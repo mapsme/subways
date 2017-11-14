@@ -604,6 +604,10 @@ class Route:
         self.network = Route.get_network(relation)
         self.mode = relation['tags']['route']
         self.interval = Route.get_interval(relation['tags']) or Route.get_interval(master_tags)
+        if relation['tags'].get('public_transport:version') == '1':
+            city.error('Public transport version is 1, which means the route '
+                       'is an unsorted pile of objects', relation)
+        self.is_circular = False
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
         tracks, line_nodes = self.build_longest_line(relation, city)
         self.tracks = [el_center(city.elements.get(k)) for k in tracks]
@@ -1049,11 +1053,22 @@ class City:
         if not_in_sa:
             self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))
 
+    def check_return_routes(self, rmaster):
+        pass
+
     def validate(self):
         networks = Counter()
         unused_stations = set(self.station_ids)
         for rmaster in self.routes.values():
             networks[str(rmaster.network)] += 1
+            if len(rmaster) == 0:
+                self.error('An empty route master {}. Please set construction:route '
+                           'if it is under construction'.format(rmaster.id))
+            elif len(rmaster) == 1:
+                self.error_if(not rmaster.best.is_circular, 'Only one route in route_master. '
+                              'Please check that it has a return route', rmaster.best.element)
+            else:
+                self.check_return_routes(rmaster)
             for route in rmaster:
                 for st in route.stops:
                     unused_stations.discard(st.stoparea.station.id)

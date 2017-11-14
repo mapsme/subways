@@ -184,7 +184,8 @@ class Station:
 
     @staticmethod
     def is_station(el, modes=DEFAULT_MODES):
-        if el.get('tags', {}).get('railway') not in ('station', 'halt'):
+        if el.get('tags', {}).get('railway') not in ('station', 'halt') and el.get(
+                'tags', {}).get('public_transport') != 'station':
             return False
         for k in CONSTRUCTION_KEYS:
             if k in el['tags']:

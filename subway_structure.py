@@ -252,12 +252,13 @@ class StopArea:
         self.element = stop_area or station.element
         self.id = el_id(self.element)
         self.station = station
-        self.stops = set()  # set of el_ids of stop_positions
+        self.stops = set()      # set of el_ids of stop_positions
         self.platforms = set()  # set of el_ids of platforms
-        self.exits = set()  # el_id of subway_entrance for leaving the platform
+        self.exits = set()      # el_id of subway_entrance for leaving the platform
         self.entrances = set()  # el_id of subway_entrance for entering the platform
-        self.center = None  # lon, lat of the station centre point
-        self.centers = {}  # el_id -> (lon, lat) for all elements
+        self.center = None      # lon, lat of the station centre point
+        self.centers = {}       # el_id -> (lon, lat) for all elements
+        self.transfer = None    # el_id of a transfer relation
 
         self.modes = station.modes
         self.name = station.name
@@ -945,7 +946,11 @@ class City:
         for m in sag['members']:
             k = el_id(m)
             if k in self.stations:
-                transfer.add(self.stations[k][0])
+                stoparea = self.stations[k][0]
+                transfer.add(stoparea)
+                if stoparea.transfer:
+                    self.warn('Stop area {} belongs to multiple interchanges'.format(k))
+                stoparea.transfer = el_id(sag)
         if len(transfer) > 1:
             self.transfers.append(transfer)
 
@@ -1058,7 +1063,9 @@ class City:
         for variant in rmaster:
             if len(variant) < 2:
                 continue
-            t = (variant[0].stoparea.id, variant[-1].stoparea.id)
+            # Using transfer ids because a train can arrive at different stations within a transfer
+            t = (variant[0].stoparea.transfer or variant[0].stoparea.id,
+                 variant[-1].stoparea.transfer or variant[-1].stoparea.id)
             if t in variants:
                 continue
             variants[t] = variant.element

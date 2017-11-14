@@ -371,8 +371,8 @@ def prepare_mapsme_data(transfers, cities, cache_name):
                     c_transfers.append([
                         uid(t[t_first].id),
                         uid(t[t_second].id),
-                        round(distance(t[t_first].center,
-                                       t[t_second].center)*3.6/SPEED_ON_TRANSFER)
+                        30 + round(distance(t[t_first].center,
+                                            t[t_second].center)*3.6/SPEED_ON_TRANSFER)
                     ])
 
     if cache_name:

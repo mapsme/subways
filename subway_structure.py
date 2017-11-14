@@ -197,11 +197,9 @@ class Station:
 
     def __init__(self, el, city):
         """Call this with a railway=station node."""
-        if el.get('tags', {}).get('railway') not in ('station', 'halt'):
+        if not Station.is_station(el, city.modes):
             raise Exception(
                 'Station object should be instantiated from a station node. Got: {}'.format(el))
-        if not Station.is_station(el, city.modes):
-            raise Exception('Processing only subway and light rail stations')
 
         if el['type'] != 'node':
             city.warn('Station is not a node', el)
@@ -1055,7 +1053,22 @@ class City:
             self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))
 
     def check_return_routes(self, rmaster):
-        pass
+        variants = {}
+        have_return = set()
+        for variant in rmaster:
+            if len(variant) < 2:
+                continue
+            t = (variant[0].stoparea.id, variant[-1].stoparea.id)
+            if t in variants:
+                continue
+            variants[t] = variant.element
+            tr = (t[1], t[0])
+            if tr in variants:
+                have_return.add(t)
+                have_return.add(tr)
+        for t, rel in variants.items():
+            if t not in have_return:
+                self.warn('Route does not have a return direction', rel)
 
     def validate(self):
         networks = Counter()

@@ -699,7 +699,8 @@ class Route:
                     if k in el['tags']:
                         city.error('An under construction {} in route'.format(m['role']), el)
                         continue
-                if el['tags'].get('railway') in ('station', 'halt'):
+                if el['tags'].get('railway') in ('station', 'halt') or el['tags'].get(
+                        'public_transport') == 'station':
                     city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(

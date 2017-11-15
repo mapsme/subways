@@ -950,7 +950,7 @@ class City:
                 stoparea = self.stations[k][0]
                 transfer.add(stoparea)
                 if stoparea.transfer:
-                    self.warn('Stop area {} belongs to multiple interchanges'.format(k))
+                    self.error('Stop area {} belongs to multiple interchanges'.format(k))
                 stoparea.transfer = el_id(sag)
         if len(transfer) > 1:
             self.transfers.append(transfer)
@@ -1074,23 +1074,24 @@ class City:
             if tr in variants:
                 have_return.add(t)
                 have_return.add(tr)
-        for t, rel in variants.items():
-            if t not in have_return:
-                self.warn('Route does not have a return direction', rel)
+
+        if len(variants) == 0:
+            self.error('An empty route master {}. Please set construction:route '
+                       'if it is under construction'.format(rmaster.id))
+        elif len(variants) == 1:
+            self.error_if(not rmaster.best.is_circular, 'Only one route in route_master. '
+                          'Please check if it needs a return route', rmaster.best.element)
+        else:
+            for t, rel in variants.items():
+                if t not in have_return:
+                    self.warn('Route does not have a return direction', rel)
 
     def validate(self):
         networks = Counter()
         unused_stations = set(self.station_ids)
         for rmaster in self.routes.values():
             networks[str(rmaster.network)] += 1
-            if len(rmaster) == 0:
-                self.error('An empty route master {}. Please set construction:route '
-                           'if it is under construction'.format(rmaster.id))
-            elif len(rmaster) == 1:
-                self.error_if(not rmaster.best.is_circular, 'Only one route in route_master. '
-                              'Please check that it has a return route', rmaster.best.element)
-            else:
-                self.check_return_routes(rmaster)
+            self.check_return_routes(rmaster)
             for route in rmaster:
                 for st in route.stops:
                     unused_stations.discard(st.stoparea.station.id)

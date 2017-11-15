@@ -184,8 +184,9 @@ class Station:
 
     @staticmethod
     def is_station(el, modes=DEFAULT_MODES):
-        if el.get('tags', {}).get('railway') not in ('station', 'halt') and el.get(
-                'tags', {}).get('public_transport') != 'station':
+        # public_transport=station is too ambigous and unspecific to use,
+        # so we expect for it to be backed by railway=station.
+        if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             return False
         for k in CONSTRUCTION_KEYS:
             if k in el['tags']:
@@ -699,8 +700,7 @@ class Route:
                     if k in el['tags']:
                         city.error('An under construction {} in route'.format(m['role']), el)
                         continue
-                if el['tags'].get('railway') in ('station', 'halt') or el['tags'].get(
-                        'public_transport') == 'station':
+                if el['tags'].get('railway') in ('station', 'halt'):
                     city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(

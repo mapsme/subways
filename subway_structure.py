@@ -219,6 +219,18 @@ class Station:
         if self.center is None:
             raise Exception('Could not find center of {}'.format(el))
 
+    def __repr__(self):
+        return 'Station(id={}, modes={}, name={}, center={})'.format(
+            self.id, ','.join(self.modes), self.name, self.center)
+
+    def __hash__(self):
+        return hash(self.__repr__())
+
+    def __eq__(self, other):
+        if isinstance(other, Station):
+            return self.id == other.id
+        return False
+
 
 class StopArea:
     @staticmethod
@@ -361,6 +373,18 @@ class StopArea:
         result.update(self.platforms)
         return result
 
+    def __repr__(self):
+        return 'StopArea(id={}, name={}, station={}, transfer={}, center={})'.format(
+            self.id, self.name, self.station, self.transfer, self.center)
+
+    def __hash__(self):
+        return hash(self.__repr__())
+
+    def __eq__(self, other):
+        if isinstance(other, StopArea):
+            return self.id == other.id and self.station == other.station
+        return False
+
 
 class RouteStop:
     def __init__(self, stoparea):
@@ -435,6 +459,10 @@ class RouteStop:
                 el_type == 'stop',
                 'Multiple {}s for a station "{}" ({}) in a route relation'.format(
                     el_type, el['tags'].get('name', ''), el_id(el)), relation)
+
+    def __repr__(self):
+        return 'RouteStop(stop={}, pl_entry={}, pl_exit={}, stoparea={})'.format(
+            self.stop, self.platform_entry, self.platform_exit, self.stoparea)
 
 
 class Route:
@@ -737,6 +765,13 @@ class Route:
     def __iter__(self):
         return iter(self.stops)
 
+    def __repr__(self):
+        return ('Route(id={}, mode={}, ref={}, name={}, network={}, interval={}, '
+                'circular={}, num_stops={}, line_length={} m, from={}, to={}').format(
+                    self.id, self.mode, self.ref, self.name, self.network, self.interval,
+                    self.is_circular, len(self.stops), self.stops[-1].distance,
+                    self.stops[0], self.stops[-1])
+
 
 class RouteMaster:
     def __init__(self, master=None):
@@ -825,6 +860,10 @@ class RouteMaster:
 
     def __iter__(self):
         return iter(self.routes)
+
+    def __repr__(self):
+        return 'RouteMaster(id={}, mode={}, ref={}, name={}, network={}, num_variants={}'.format(
+            self.id, self.mode, self.ref, self.name, self.network, len(self.routes))
 
 
 class City:
@@ -989,6 +1028,8 @@ class City:
         # Extract routes
         for el in self.elements.values():
             if Route.is_route(el, self.modes):
+                if el['tags'].get('access') in ('no', 'private'):
+                    continue
                 route_id = el_id(el)
                 master = self.masters.get(route_id, None)
                 if self.networks:

@@ -360,6 +360,21 @@ def prepare_mapsme_data(transfers, cities, cache_name):
                         'distance': 60 + round(distance(
                             stop.centers[e], stop.center)*3.6/SPEED_TO_ENTRANCE)
                     })
+        if len(stop.entrances) + len(stop.exits) == 0:
+            if stop.platforms:
+                gates = list(stop.platforms)
+            else:
+                gates = [stop.id]
+            for pl in gates:
+                for k in ('entrances', 'exits'):
+                    st[k].append({
+                        'node_id': int(pl[1:]),
+                        'lon': stop.centers[pl][0],
+                        'lat': stop.centers[pl][1],
+                        'distance': 60 + round(distance(
+                            stop.centers[pl], stop.center)*3.6/SPEED_TO_ENTRANCE)
+                    })
+
         m_stops.append(st)
 
     c_transfers = []

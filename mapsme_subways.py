@@ -297,6 +297,25 @@ def prepare_mapsme_data(transfers, cities, cache_name):
     def format_colour(c):
         return c[1:] if c else None
 
+    def find_exits_for_platform(center, nodes):
+        exits = []
+        min_distance = None
+        for n in nodes:
+            d = distance(center, (n['lon'], n['lat']))
+            if not min_distance:
+                min_distance = d * 2 / 3
+            elif d < min_distance:
+                continue
+            too_close = False
+            for e in exits:
+                d = distance((e['lon'], e['lat']), (n['lon'], n['lat']))
+                if d < min_distance:
+                    too_close = True
+                    break
+            if not too_close:
+                exits.append(n)
+        return exits
+
     cache = {}
     if cache_name:
         with open(cache_name, 'r', encoding='utf-8') as f:
@@ -311,6 +330,7 @@ def prepare_mapsme_data(transfers, cities, cache_name):
             continue
         # TODO: get a network, stops and transfers from cache
 
+    platform_nodes = {}
     for city in cities:
         network = {'network': city.name, 'routes': [], 'agency_id': city.id}
         for route in city:
@@ -330,6 +350,26 @@ def prepare_mapsme_data(transfers, cities, cache_name):
                 for stop in variant:
                     stops[stop.stoparea.id] = stop.stoparea
                     itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
+                    # Make exits from platform nodes, if we don't have proper exits
+                    if len(stop.stoparea.entrances) + len(stop.stoparea.exits) == 0:
+                        for pl in stop.stoparea.platforms:
+                            pl_el = city.elements[pl]
+                            if pl_el['type'] == 'node':
+                                pl_nodes = [pl_el]
+                            elif pl_el['type'] == 'way':
+                                pl_nodes = [city.elements['n{}'.format(n)]
+                                            for n in pl_el['nodes']]
+                            else:
+                                pl_nodes = []
+                                for m in pl_el['members']:
+                                    if m['type'] == 'way':
+                                        pl_nodes.extend(
+                                            [city.elements['n{}'.format(n)]
+                                             for n in city.elements['{}{}'.format(
+                                                 m['type'][0], m['ref'])]['nodes']])
+                            platform_nodes[pl] = find_exits_for_platform(
+                                stop.stoparea.centers[pl], pl_nodes)
+
                 routes['itineraries'].append({
                     'stops': itin,
                     'interval': round((variant.interval or DEFAULT_INTERVAL) * 60)
@@ -354,7 +394,8 @@ def prepare_mapsme_data(transfers, cities, cache_name):
             for e in e_l:
                 if e[0] == 'n':
                     st[k].append({
-                        'node_id': int(e[1:]),
+                        'osm_type': 'node',
+                        'osm_id': int(e[1:]),
                         'lon': stop.centers[e][0],
                         'lat': stop.centers[e][1],
                         'distance': 60 + round(distance(
@@ -362,17 +403,25 @@ def prepare_mapsme_data(transfers, cities, cache_name):
                     })
         if len(stop.entrances) + len(stop.exits) == 0:
             if stop.platforms:
-                gates = list(stop.platforms)
+                for pl in stop.platforms:
+                    for n in platform_nodes[pl]:
+                        for k in ('entrances', 'exits'):
+                            st[k].append({
+                                'osm_type': n['type'],
+                                'osm_id': n['id'],
+                                'lon': n['lon'],
+                                'lat': n['lat'],
+                                'distance': 60 + round(distance(
+                                    (n['lon'], n['lat']), stop.center)*3.6/SPEED_TO_ENTRANCE)
+                            })
             else:
-                gates = [stop.id]
-            for pl in gates:
                 for k in ('entrances', 'exits'):
                     st[k].append({
-                        'node_id': int(pl[1:]),
-                        'lon': stop.centers[pl][0],
-                        'lat': stop.centers[pl][1],
-                        'distance': 60 + round(distance(
-                            stop.centers[pl], stop.center)*3.6/SPEED_TO_ENTRANCE)
+                        'osm_type': OSM_TYPES[pl[0]][1],
+                        'osm_id': int(pl[1:]),
+                        'lon': stop.centers[stop.id][0],
+                        'lat': stop.centers[stop.id][1],
+                        'distance': 60
                     })
 
         m_stops.append(st)

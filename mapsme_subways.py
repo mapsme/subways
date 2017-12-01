@@ -417,8 +417,8 @@ def prepare_mapsme_data(transfers, cities, cache_name):
             else:
                 for k in ('entrances', 'exits'):
                     st[k].append({
-                        'osm_type': OSM_TYPES[pl[0]][1],
-                        'osm_id': int(pl[1:]),
+                        'osm_type': OSM_TYPES[stop.id[0]][1],
+                        'osm_id': int(stop.id[1:]),
                         'lon': stop.centers[stop.id][0],
                         'lat': stop.centers[stop.id][1],
                         'distance': 60

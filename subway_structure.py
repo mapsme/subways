@@ -202,9 +202,6 @@ class Station:
             raise Exception(
                 'Station object should be instantiated from a station node. Got: {}'.format(el))
 
-        if el['type'] != 'node':
-            city.warn('Station is not a node', el)
-
         self.id = el_id(el)
         self.element = el
         self.modes = Station.get_modes(el)
@@ -419,6 +416,8 @@ class RouteStop:
         if StopArea.is_stop(el):
             if 'platform' in role:
                 city.warn('Stop position in a platform role in a route', el)
+            if el['type'] != 'node':
+                city.error('Stop position is not a node', el)
             self.stop = el_center(el)
             if 'entry_only' not in role:
                 self.can_exit = True
@@ -426,6 +425,9 @@ class RouteStop:
                 self.can_enter = True
 
         elif Station.is_station(el, city.modes):
+            if el['type'] != 'node':
+                city.warn('Station in route is not a node', el)
+
             if not self.seen_stop and not self.seen_platform:
                 self.stop = el_center(el)
                 self.can_enter = True

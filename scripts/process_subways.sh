@@ -41,7 +41,7 @@ PYTHON=${PYTHON:-python3}
 # This will fail if there is no python
 "$PYTHON" --version > /dev/null
 SUBWAYS_PATH="$(dirname "$0")/.."
-[ ! -f "$SUBWAYS_PATH/mapsme_subways.py" ] && echo "Please clone the subways repo to $SUBWAYS_PATH" && exit 2
+[ ! -f "$SUBWAYS_PATH/process_subways.py" ] && echo "Please clone the subways repo to $SUBWAYS_PATH" && exit 2
 TMPDIR="${TMPDIR:-$SUBWAYS_PATH}"
 
 # Downloading the latest version of the subways script
@@ -71,7 +71,7 @@ QNODES="railway=station station=subway =light_rail =monorail railway=subway_entr
 # Running the validation
 
 VALIDATION="$TMPDIR/validation.json"
-"$PYTHON" "$SUBWAYS_PATH/mapsme_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${MAPSME+-o "$MAPSME"} ${CITY+-c "$CITY"} ${DUMP+-d "$DUMP"} ${JSON+-j "$JSON"}
+"$PYTHON" "$SUBWAYS_PATH/process_subways.py" -q -x "$FILTERED_DATA" -l "$VALIDATION" ${MAPSME+-o "$MAPSME"} ${CITY+-c "$CITY"} ${DUMP+-d "$DUMP"} ${JSON+-j "$JSON"}
 rm "$FILTERED_DATA"
 
 # Preparing HTML files

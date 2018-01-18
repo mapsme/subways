@@ -3,7 +3,8 @@ from subway_structure import distance
 
 
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
-SPEED_TO_ENTRANCE = 3  # km/h
+ENTRANCE_PENALTY = 60  # seconds
+SPEED_TO_ENTRANCE = 5  # km/h
 SPEED_ON_TRANSFER = 3.5
 SPEED_ON_LINE = 40
 DEFAULT_INTERVAL = 2.5  # minutes
@@ -123,7 +124,7 @@ def process(cities, transfers, cache_name):
                         'osm_id': int(e[1:]),
                         'lon': stop.centers[e][0],
                         'lat': stop.centers[e][1],
-                        'distance': 60 + round(distance(
+                        'distance': ENTRANCE_PENALTY + round(distance(
                             stop.centers[e], stop.center)*3.6/SPEED_TO_ENTRANCE)
                     })
         if len(stop.entrances) + len(stop.exits) == 0:
@@ -136,7 +137,7 @@ def process(cities, transfers, cache_name):
                                 'osm_id': n['id'],
                                 'lon': n['lon'],
                                 'lat': n['lat'],
-                                'distance': 60 + round(distance(
+                                'distance': ENTRANCE_PENALTY + round(distance(
                                     (n['lon'], n['lat']), stop.center)*3.6/SPEED_TO_ENTRANCE)
                             })
             else:

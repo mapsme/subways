@@ -1108,8 +1108,13 @@ class City:
             if len(variant) < 2:
                 continue
             # Using transfer ids because a train can arrive at different stations within a transfer
-            t = (variant[0].stoparea.transfer or variant[0].stoparea.id,
-                 variant[-1].stoparea.transfer or variant[-1].stoparea.id)
+            # But disregard transfer that may give an impression of a circular route
+            # (for example, Simonis / Elisabeth station and route 2 in Brussels)
+            if variant[0].stoparea.transfer == variant[-1].stoparea.transfer:
+                t = (variant[0].stoparea.id, variant[-1].stoparea.id)
+            else:
+                t = (variant[0].stoparea.transfer or variant[0].stoparea.id,
+                     variant[-1].stoparea.transfer or variant[-1].stoparea.id)
             if t in variants:
                 continue
             variants[t] = variant.element

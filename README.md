@@ -32,6 +32,11 @@ scripts/process_subways.sh
 
 The bounding box can be found in the
 [Google Spreadsheet](https://docs.google.com/spreadsheets/d/1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8/edit?usp=sharing).
+
+This can be simplified by using the `build_city.sh` script, which fetches the bbox from the web:
+
+    scripts/build_city.sh london.o5m London
+
 If you are okay with rare updates, use [this website](http://osmz.ru/subways/).
 
 ## Adding Stop Areas To OSM

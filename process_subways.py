@@ -9,6 +9,7 @@ import time
 import urllib.parse
 import urllib.request
 from processors import processor
+from collections import OrderedDict
 
 from subway_structure import (
     download_cities,
@@ -168,15 +169,15 @@ def dump_data(city, f):
     stops = set()
     routes = []
     for route in city:
-        stations = ['{} ({})'.format(sa.name, sa.transfer or sa.id) for sa in route.stop_areas()]
+        stations = OrderedDict([(sa.transfer or sa.id, sa.name) for sa in route.stop_areas()])
         rte = {
             'type': route.mode,
             'ref': route.ref,
             'name': route.name,
             'colour': route.colour,
             'infill': route.infill,
-            'station_count': len(set(stations)),
-            'stations': stations,
+            'station_count': len(stations),
+            'stations': list(stations.values()),
             'itineraries': {}
         }
         for variant in route:

@@ -168,13 +168,16 @@ def dump_data(city, f):
     stops = set()
     routes = []
     for route in city:
+        stations = ['{} ({})'.format(sa.name, sa.transfer or sa.id) for sa in route.stop_areas()]
         rte = {
             'type': route.mode,
             'ref': route.ref,
             'name': route.name,
             'colour': route.colour,
             'infill': route.infill,
-            'itineraries': []
+            'station_count': len(set(stations)),
+            'stations': stations,
+            'itineraries': {}
         }
         for variant in route:
             if INCLUDE_STOP_AREAS:
@@ -190,7 +193,7 @@ def dump_data(city, f):
                 v_stops = ['{} ({})'.format(
                     s.stoparea.station.name,
                     s.stoparea.station.id) for s in variant]
-            rte['itineraries'].append(v_stops)
+            rte['itineraries'][variant.id] = v_stops
             stops.update(v_stops)
         routes.append(rte)
     transfers = []

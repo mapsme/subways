@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 
 
 SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
-MAX_DISTANCE_NEARBY = 150  # in meters
+MAX_DISTANCE_TO_ENTRANCES = 300  # in meters
 MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
@@ -310,34 +310,21 @@ class StopArea:
                             city.error('Tracks in a stop_area relation', stop_area)
                             warned_about_tracks = True
         else:
-            # Otherwise add nearby entrances and stop positions
+            # Otherwise add nearby entrances
             center = station.center
             for c_el in city.elements.values():
-                c_id = el_id(c_el)
-                if c_id in city.stop_areas:
-                    continue
-                c_center = el_center(c_el)
-                if 'tags' not in c_el or not c_center:
-                    continue
-                if 'station' in c_el['tags']:
-                    continue
-                if StopArea.is_stop(c_el):
-                    # Take care to not add other stations
-                    if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
-                        self.stops.add(c_id)
-                elif StopArea.is_stop(c_el):
-                    # Take care to not add other stations
-                    if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
-                        self.platforms.add(c_id)
-                elif c_el['tags'].get('railway') == 'subway_entrance':
-                    if distance(center, c_center) <= MAX_DISTANCE_NEARBY:
-                        if c_el['type'] != 'node':
-                            city.warn('Subway entrance is not a node', c_el)
-                        etag = c_el['tags'].get('entrance')
-                        if etag != 'exit':
-                            self.entrances.add(c_id)
-                        if etag != 'entrance':
-                            self.exits.add(c_id)
+                if c_el.get('tags', {}).get('railway') == 'subway_entrance':
+                    c_id = el_id(c_el)
+                    if c_id not in city.stop_areas:
+                        c_center = el_center(c_el)
+                        if c_center and distance(center, c_center) <= MAX_DISTANCE_TO_ENTRANCES:
+                            if c_el['type'] != 'node':
+                                city.warn('Subway entrance is not a node', c_el)
+                            etag = c_el['tags'].get('entrance')
+                            if etag != 'exit':
+                                self.entrances.add(c_id)
+                            if etag != 'entrance':
+                                self.exits.add(c_id)
 
         if self.exits and not self.entrances:
             city.error('Only exits for a station, no entrances', stop_area or station.element)
@@ -854,6 +841,16 @@ class RouteMaster:
         if not self.best or len(route.stops) > len(self.best.stops):
             self.best = route
 
+    def stop_areas(self):
+        """Returns a list of all stations on all route variants."""
+        seen_ids = set()
+        for route in self.routes:
+            for stop in route:
+                st = stop.stoparea
+                if st.id not in seen_ids:
+                    seen_ids.add(st.id)
+                    yield st
+
     def __len__(self):
         return len(self.routes)
 
@@ -1136,13 +1133,16 @@ class City:
 
     def validate(self):
         networks = Counter()
+        self.found_stations = 0
         unused_stations = set(self.station_ids)
         for rmaster in self.routes.values():
             networks[str(rmaster.network)] += 1
             self.check_return_routes(rmaster)
-            for route in rmaster:
-                for st in route.stops:
-                    unused_stations.discard(st.stoparea.station.id)
+            route_stations = set()
+            for sa in rmaster.stop_areas():
+                route_stations.add(sa.transfer or sa.id)
+                unused_stations.discard(sa.station.id)
+            self.found_stations += len(route_stations)
         if unused_stations:
             self.unused_stations = len(unused_stations)
             self.warn('{} unused stations: {}'.format(
@@ -1158,7 +1158,6 @@ class City:
             self.error('Found {} light rail lines, expected {}'.format(
                 self.found_light_lines, self.num_light_lines))
 
-        self.found_stations = len(self.station_ids) - len(unused_stations)
         if self.found_stations != self.num_stations:
             msg = 'Found {} stations in routes, expected {}'.format(
                 self.found_stations, self.num_stations)

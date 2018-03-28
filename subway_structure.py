@@ -646,7 +646,7 @@ class Route:
                 st_list = city.stations[k]
                 st = st_list[0]
                 if len(st_list) > 1:
-                    city.error('Ambigous station {} in route. Please use stop_position or split '
+                    city.error('Ambiguous station {} in route. Please use stop_position or split '
                                'interchange stations'.format(st.name), relation)
                     # city.error(', '.join([x.id for x in st_list]))
                 el = city.elements[k]

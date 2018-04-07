@@ -244,7 +244,7 @@ class StopArea:
     def is_platform(el):
         if 'tags' not in el:
             return False
-        if el['tags'].get('railway') == 'platform':
+        if el['tags'].get('railway') in ('platform', 'platform_edge'):
             return True
         if el['tags'].get('public_transport') == 'platform':
             return True

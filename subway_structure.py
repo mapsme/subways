@@ -1093,7 +1093,7 @@ class City:
         self.unused_entrances = len(unused)
         self.entrances_not_in_stop_areas = len(not_in_sa)
         if unused:
-            self.warn('Found {} entrances not used in routes or stop_areas: {}'.format(
+            self.error('Found {} entrances not used in routes or stop_areas: {}'.format(
                 len(unused), format_elid_list(unused)))
         if not_in_sa:
             self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))

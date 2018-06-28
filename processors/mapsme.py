@@ -83,16 +83,17 @@ def process(cities, transfers, cache_name):
                             if pl_el['type'] == 'node':
                                 pl_nodes = [pl_el]
                             elif pl_el['type'] == 'way':
-                                pl_nodes = [city.elements['n{}'.format(n)]
+                                pl_nodes = [city.elements.get('n{}'.format(n))
                                             for n in pl_el['nodes']]
                             else:
                                 pl_nodes = []
                                 for m in pl_el['members']:
                                     if m['type'] == 'way':
                                         pl_nodes.extend(
-                                            [city.elements['n{}'.format(n)]
+                                            [city.elements.get('n{}'.format(n))
                                              for n in city.elements['{}{}'.format(
                                                  m['type'][0], m['ref'])]['nodes']])
+                            pl_nodes = [n for n in pl_nodes if n]
                             platform_nodes[pl] = find_exits_for_platform(
                                 stop.stoparea.centers[pl], pl_nodes)
 

@@ -114,8 +114,15 @@ COUNTRY_HEADER = '''
 <table cellspacing="3" cellpadding="2">
 <tr>
 <th>City</th>
+{?subways}
 <th>Subway Lines</th>
 <th>Light Rail Lines</th>
+{end}{?overground}
+<th>Tram Lines</th>
+<th>Bus Lines</th>
+<th>T-Bus Lines</th>
+<th>Other Lines</th>
+{end}
 <th>Stations</th>
 <th>Interchanges</th>
 <th>Unused Entrances</th>
@@ -125,13 +132,20 @@ COUNTRY_HEADER = '''
 COUNTRY_CITY = '''
 <tr id="{slug}">
 <td class="bold color{good_cities}">{city}{?yaml} <a href="{yaml}" class="hlink">Y</a>{end}{?json} <a href="{json}" class="hlink">J</a>{end}</td>
+{?subways}
 <td class="color{=subwayl}">sub: {subwayl_found} / {subwayl_expected}</td>
 <td class="color{=lightrl}">lr: {lightrl_found} / {lightrl_expected}</td>
+{end}{?overground}
+<td class="color{=traml}">t: {traml_found} / {traml_expected}</td>
+<td class="color{=busl}">b: {busl_found} / {busl_expected}</td>
+<td class="color{=trolleybusl}">tb: {trolleybusl_found} / {trolleybusl_expected}</td>
+<td class="color{=otherl}">o: {otherl_found} / {otherl_expected}</td>
+{end}
 <td class="color{=stations}">st: {stations_found} / {stations_expected}</td>
 <td class="color{=transfers}">int: {transfers_found} / {transfers_expected}</td>
 <td class="color{=entrances}">e: {unused_entrances}</td>
 </tr>
-<tr><td colspan="5">
+<tr><td colspan="{?subways}6{end}{?overground}8{end}">
 <div class="errors">
 {errors}
 </div><div class="warnings">

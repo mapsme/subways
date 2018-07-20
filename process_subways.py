@@ -291,6 +291,8 @@ if __name__ == '__main__':
         help='Use city boundaries to query Overpass API instead of querying the world')
     parser.add_argument('-q', '--quiet', action='store_true', help='Show only warnings and errors')
     parser.add_argument('-c', '--city', help='Validate only a single city or a country')
+    parser.add_argument('-t', '--overground', action='store_true',
+                        help='Process overground transport instead of subways')
     parser.add_argument('-e', '--entrances', type=argparse.FileType('w', encoding='utf-8'),
                         help='Export unused subway entrances as GeoJSON here')
     parser.add_argument('-l', '--log', type=argparse.FileType('w', encoding='utf-8'),
@@ -312,7 +314,7 @@ if __name__ == '__main__':
                         format='%(asctime)s %(levelname)-7s  %(message)s')
 
     # Downloading cities from Google Spreadsheets
-    cities = download_cities()
+    cities = download_cities(options.overground)
     if options.city:
         cities = [c for c in cities if c.name == options.city or c.country == options.city]
     if not cities:

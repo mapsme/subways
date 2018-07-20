@@ -53,9 +53,11 @@ class CityData:
         for k in self.data:
             s = s.replace('{'+k+'}', str(self.data[k]))
         s = s.replace('{slug}', self.slug or '')
-        for k in ('subwayl', 'lightrl', 'stations', 'transfers'):
-            s = s.replace('{='+k+'}',
-                          test_eq(self.data[k+'_found'], self.data[k+'_expected']))
+        for k in ('subwayl', 'lightrl', 'stations', 'transfers', 'busl',
+                  'trolleybusl', 'traml', 'otherl'):
+            if k+'_expected' in self.data:
+                s = s.replace('{='+k+'}',
+                              test_eq(self.data[k+'_found'], self.data[k+'_expected']))
         s = s.replace('{=cities}',
                       test_eq(self.data['good_cities'], self.data['total_cities']))
         s = s.replace('{=entrances}', test_eq(self.data['unused_entrances'], 0))
@@ -71,7 +73,7 @@ def tmpl(s, data=None, **kwargs):
         for k, v in kwargs.items():
             if v is not None:
                 s = s.replace('{'+k+'}', str(v))
-            s = re.sub(r'\{\?'+k+r'\}(.+?)\{end\}', r'\1' if v else '', s)
+            s = re.sub(r'\{\?'+k+r'\}(.+?)\{end\}', r'\1' if v else '', s, flags=re.DOTALL)
     s = s.replace('{date}', date)
     google_url = 'https://docs.google.com/spreadsheets/d/{}/edit?usp=sharing'.format(SPREADSHEET_ID)
     s = s.replace('{google}', google_url)
@@ -119,6 +121,7 @@ for c in data.values():
     c_by_c[c.continent].add(c.country)
 world = sum(continents.values(), CityData())
 
+overground = 'traml_expected' in next(iter(data.values())).data
 date = datetime.datetime.now().strftime('%d.%m.%Y %H:%M')
 path = '.' if len(sys.argv) < 3 else sys.argv[2]
 index = open(os.path.join(path, 'index.html'), 'w', encoding='utf-8')
@@ -131,7 +134,8 @@ for continent in sorted(continents.keys()):
         content += tmpl(INDEX_COUNTRY, countries[country], file=country_file_name,
                         country=country, continent=continent)
         country_file = open(os.path.join(path, country_file_name), 'w', encoding='utf-8')
-        country_file.write(tmpl(COUNTRY_HEADER, country=country, continent=continent))
+        country_file.write(tmpl(COUNTRY_HEADER, country=country, continent=continent,
+                                overground=overground, subways=not overground))
         for name, city in sorted(data.items()):
             if city.country == country:
                 file_base = os.path.join(path, city.slug)
@@ -142,8 +146,8 @@ for continent in sorted(continents.keys()):
                 w = '<br>'.join([osm_links(esc(w)) for w in city.warnings])
                 country_file.write(tmpl(COUNTRY_CITY, city,
                                         city=name, country=country, continent=continent,
-                                        yaml=yaml_file, json=json_file,
-                                        errors=e, warnings=w))
+                                        yaml=yaml_file, json=json_file, subways=not overground,
+                                        errors=e, warnings=w, overground=overground))
         country_file.write(tmpl(COUNTRY_FOOTER, country=country, continent=continent))
         country_file.close()
     index.write(tmpl(INDEX_CONTINENT, continents[continent],

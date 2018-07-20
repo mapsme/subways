@@ -15,6 +15,7 @@ ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
 MIN_ANGLE_BETWEEN_STOPS = 45  # in degrees
 
 DEFAULT_MODES = set(('subway', 'light_rail'))
+DEFAULT_MODES_OVERGROUND = set(('tram',))  # TODO: bus and trolleybus?
 ALL_MODES = set(('subway', 'light_rail', 'monorail', 'train', 'tram',
                  'bus', 'trolleybus', 'aerialway', 'ferry'))
 RAILWAY_TYPES = set(('rail', 'light_rail', 'subway', 'narrow_gauge',
@@ -186,6 +187,8 @@ class Station:
     def is_station(el, modes=DEFAULT_MODES):
         # public_transport=station is too ambigous and unspecific to use,
         # so we expect for it to be backed by railway=station.
+        if 'tram' in modes and el.get('tags', {}).get('railway') == 'tram_stop':
+            return True
         if el.get('tags', {}).get('railway') not in ('station', 'halt'):
             return False
         for k in CONSTRUCTION_KEYS:
@@ -605,7 +608,8 @@ class Route:
         self.ref = relation['tags'].get('ref', master_tags.get(
             'ref', relation['tags'].get('name', None)))
         self.name = relation['tags'].get('name', None)
-        if 'colour' not in relation['tags'] and 'colour' not in master_tags:
+        self.mode = relation['tags']['route']
+        if 'colour' not in relation['tags'] and 'colour' not in master_tags and self.mode != 'tram':
             city.warn('Missing colour on a route', relation)
         try:
             self.colour = normalize_colour(relation['tags'].get(
@@ -620,7 +624,6 @@ class Route:
             self.infill = None
             city.warn(str(e), relation)
         self.network = Route.get_network(relation)
-        self.mode = relation['tags']['route']
         self.interval = Route.get_interval(relation['tags']) or Route.get_interval(master_tags)
         if relation['tags'].get('public_transport:version') == '1':
             city.error('Public transport version is 1, which means the route '
@@ -866,17 +869,24 @@ class RouteMaster:
 
 
 class City:
-    def __init__(self, row):
+    def __init__(self, row, overground=False):
         self.name = row[1]
         self.country = row[2]
         self.continent = row[3]
         if not row[0]:
             self.error('City {} does not have an id'.format(self.name))
         self.id = int(row[0] or '0')
-        self.num_stations = int(row[4])
-        self.num_lines = int(row[5] or '0')
-        self.num_light_lines = int(row[6] or '0')
-        self.num_interchanges = int(row[7] or '0')
+        self.overground = overground
+        if not overground:
+            self.num_stations = int(row[4])
+            self.num_lines = int(row[5] or '0')
+            self.num_light_lines = int(row[6] or '0')
+            self.num_interchanges = int(row[7] or '0')
+        else:
+            self.num_tram_lines = int(row[4] or '0')
+            self.num_trolleybus_lines = int(row[5] or '0')
+            self.num_bus_lines = int(row[6] or '0')
+            self.num_other_lines = int(row[7] or '0')
 
         # Aquiring list of networks and modes
         networks = None if len(row) <= 9 else row[9].split(':')
@@ -885,7 +895,10 @@ class City:
         else:
             self.networks = set(filter(None, [x.strip() for x in networks[-1].split(';')]))
         if not networks or len(networks) < 2 or len(networks[0]) == 0:
-            self.modes = DEFAULT_MODES
+            if self.overground:
+                self.modes = DEFAULT_MODES_OVERGROUND
+            else:
+                self.modes = DEFAULT_MODES
         else:
             self.modes = set([x.strip() for x in networks[0].split(',')])
 
@@ -906,6 +919,28 @@ class City:
         self.stops_and_platforms = set()  # Set of stops and platforms el_id
         self.errors = []
         self.warnings = []
+
+    def log_message(self, message, el):
+        if el:
+            tags = el.get('tags', {})
+            message += ' ({} {}, "{}")'.format(
+                el['type'], el.get('id', el.get('ref')),
+                tags.get('name', tags.get('ref', '')))
+        return message
+
+    def warn(self, message, el=None):
+        msg = self.log_message(message, el)
+        self.warnings.append(msg)
+
+    def error(self, message, el=None):
+        msg = self.log_message(message, el)
+        self.errors.append(msg)
+
+    def error_if(self, is_error, message, el=None):
+        if is_error:
+            self.error(message, el)
+        else:
+            self.warn(message, el)
 
     def contains(self, el):
         center = el_center(el)
@@ -938,48 +973,6 @@ class City:
                     else:
                         stop_area.append(el)
 
-    def get_validation_result(self):
-        result = {
-            'name': self.name,
-            'country': self.country,
-            'continent': self.continent,
-            'stations_expected': self.num_stations,
-            'subwayl_expected': self.num_lines,
-            'lightrl_expected': self.num_light_lines,
-            'transfers_expected': self.num_interchanges,
-            'stations_found': self.found_stations,
-            'subwayl_found': self.found_lines,
-            'lightrl_found': self.found_light_lines,
-            'transfers_found': self.found_interchanges,
-            'unused_entrances': self.unused_entrances,
-            'networks': self.found_networks,
-        }
-        result['warnings'] = self.warnings
-        result['errors'] = self.errors
-        return result
-
-    def log_message(self, message, el):
-        if el:
-            tags = el.get('tags', {})
-            message += ' ({} {}, "{}")'.format(
-                el['type'], el.get('id', el.get('ref')),
-                tags.get('name', tags.get('ref', '')))
-        return message
-
-    def warn(self, message, el=None):
-        msg = self.log_message(message, el)
-        self.warnings.append(msg)
-
-    def error(self, message, el=None):
-        msg = self.log_message(message, el)
-        self.errors.append(msg)
-
-    def error_if(self, is_error, message, el=None):
-        if is_error:
-            self.error(message, el)
-        else:
-            self.warn(message, el)
-
     def make_transfer(self, sag):
         transfer = set()
         for m in sag['members']:
@@ -992,9 +985,6 @@ class City:
                 stoparea.transfer = el_id(sag)
         if len(transfer) > 1:
             self.transfers.append(transfer)
-
-    def is_good(self):
-        return len(self.errors) == 0
 
     def extract_routes(self):
         # Extract stations
@@ -1070,6 +1060,45 @@ class City:
     def __iter__(self):
         return iter(self.routes.values())
 
+    def is_good(self):
+        return len(self.errors) == 0
+
+    def get_validation_result(self):
+        result = {
+            'name': self.name,
+            'country': self.country,
+            'continent': self.continent,
+            'stations_found': self.found_stations,
+            'transfers_found': self.found_interchanges,
+            'unused_entrances': self.unused_entrances,
+            'networks': self.found_networks,
+        }
+        if not self.overground:
+            result.update({
+                'subwayl_expected': self.num_lines,
+                'lightrl_expected': self.num_light_lines,
+                'subwayl_found': self.found_lines,
+                'lightrl_found': self.found_light_lines,
+                'stations_expected': self.num_stations,
+                'transfers_expected': self.num_interchanges,
+            })
+        else:
+            result.update({
+                'stations_expected': 0,
+                'transfers_expected': 0,
+                'busl_expected': self.num_bus_lines,
+                'trolleybusl_expected': self.num_trolleybus_lines,
+                'traml_expected': self.num_tram_lines,
+                'otherl_expected': self.num_other_lines,
+                'busl_found': self.found_bus_lines,
+                'trolleybusl_found': self.found_trolleybus_lines,
+                'traml_found': self.found_tram_lines,
+                'otherl_found': self.found_other_lines,
+            })
+        result['warnings'] = self.warnings
+        result['errors'] = self.errors
+        return result
+
     def count_unused_entrances(self):
         global used_entrances
         stop_areas = set()
@@ -1131,13 +1160,35 @@ class City:
                 if t not in have_return:
                     self.warn('Route does not have a return direction', rel)
 
+    def validate_lines(self):
+        self.found_light_lines = len([x for x in self.routes.values() if x.mode != 'subway'])
+        self.found_lines = len(self.routes) - self.found_light_lines
+        if self.found_lines != self.num_lines:
+            self.error('Found {} subway lines, expected {}'.format(
+                self.found_lines, self.num_lines))
+        if self.found_light_lines != self.num_light_lines:
+            self.error('Found {} light rail lines, expected {}'.format(
+                self.found_light_lines, self.num_light_lines))
+
+    def validate_overground_lines(self):
+        self.found_tram_lines = len([x for x in self.routes.values() if x.mode == 'tram'])
+        self.found_bus_lines = len([x for x in self.routes.values() if x.mode == 'bus'])
+        self.found_trolleybus_lines = len([x for x in self.routes.values()
+                                           if x.mode == 'trolleybus'])
+        self.found_other_lines = len([x for x in self.routes.values()
+                                      if x.mode not in ('bus', 'trolleybus', 'tram')])
+        if self.found_tram_lines != self.num_tram_lines:
+            self.warn('Found {} tram lines, expected {}'.format(
+                self.found_tram_lines, self.num_tram_lines))
+
     def validate(self):
         networks = Counter()
         self.found_stations = 0
         unused_stations = set(self.station_ids)
         for rmaster in self.routes.values():
             networks[str(rmaster.network)] += 1
-            self.check_return_routes(rmaster)
+            if not self.overground:
+                self.check_return_routes(rmaster)
             route_stations = set()
             for sa in rmaster.stop_areas():
                 route_stations.add(sa.transfer or sa.id)
@@ -1148,29 +1199,26 @@ class City:
             self.warn('{} unused stations: {}'.format(
                 self.unused_stations, format_elid_list(unused_stations)))
         self.count_unused_entrances()
-
-        self.found_light_lines = len([x for x in self.routes.values() if x.mode != 'subway'])
-        self.found_lines = len(self.routes) - self.found_light_lines
-        if self.found_lines != self.num_lines:
-            self.error('Found {} subway lines, expected {}'.format(
-                self.found_lines, self.num_lines))
-        if self.found_light_lines != self.num_light_lines:
-            self.error('Found {} light rail lines, expected {}'.format(
-                self.found_light_lines, self.num_light_lines))
-
-        if self.found_stations != self.num_stations:
-            msg = 'Found {} stations in routes, expected {}'.format(
-                self.found_stations, self.num_stations)
-            self.error_if(not (0 <= (self.num_stations - self.found_stations) / self.num_stations <=
-                               ALLOWED_STATIONS_MISMATCH), msg)
-
         self.found_interchanges = len(self.transfers)
-        if self.found_interchanges != self.num_interchanges:
-            msg = 'Found {} interchanges, expected {}'.format(
-                self.found_interchanges, self.num_interchanges)
-            self.error_if(self.num_interchanges != 0 and not
-                          ((self.num_interchanges - self.found_interchanges) /
-                           self.num_interchanges <= ALLOWED_TRANSFERS_MISMATCH), msg)
+
+        if self.overground:
+            self.validate_overground_lines()
+        else:
+            self.validate_lines()
+
+            if self.found_stations != self.num_stations:
+                msg = 'Found {} stations in routes, expected {}'.format(
+                    self.found_stations, self.num_stations)
+                self.error_if(not (0 <=
+                                   (self.num_stations - self.found_stations) / self.num_stations <=
+                                   ALLOWED_STATIONS_MISMATCH), msg)
+
+            if self.found_interchanges != self.num_interchanges:
+                msg = 'Found {} interchanges, expected {}'.format(
+                    self.found_interchanges, self.num_interchanges)
+                self.error_if(self.num_interchanges != 0 and not
+                              ((self.num_interchanges - self.found_interchanges) /
+                               self.num_interchanges <= ALLOWED_TRANSFERS_MISMATCH), msg)
 
         self.found_networks = len(networks)
         if len(networks) > max(1, len(self.networks)):
@@ -1218,8 +1266,9 @@ def get_unused_entrances_geojson(elements):
     return {'type': 'FeatureCollection', 'features': features}
 
 
-def download_cities():
-    url = 'https://docs.google.com/spreadsheets/d/{}/export?format=csv'.format(SPREADSHEET_ID)
+def download_cities(overground=False):
+    url = 'https://docs.google.com/spreadsheets/d/{}/export?format=csv{}'.format(
+        SPREADSHEET_ID, '&gid=1881416409' if overground else '')
     response = urllib.request.urlopen(url)
     if response.getcode() != 200:
         raise Exception('Failed to download cities spreadsheet: HTTP {}'.format(response.getcode()))
@@ -1230,7 +1279,7 @@ def download_cities():
     cities = []
     for row in r:
         if len(row) > 8 and row[8]:
-            cities.append(City(row))
+            cities.append(City(row, overground))
             if row[0].strip() in names:
                 logging.warning('Duplicate city name in the google spreadsheet: %s', row[0])
             names.add(row[0].strip())

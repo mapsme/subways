@@ -1178,7 +1178,7 @@ class City:
         self.found_other_lines = len([x for x in self.routes.values()
                                       if x.mode not in ('bus', 'trolleybus', 'tram')])
         if self.found_tram_lines != self.num_tram_lines:
-            self.warn('Found {} tram lines, expected {}'.format(
+            self.error_if(self.found_tram_lines == 0, 'Found {} tram lines, expected {}'.format(
                 self.found_tram_lines, self.num_tram_lines))
 
     def validate(self):

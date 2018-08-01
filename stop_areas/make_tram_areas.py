@@ -60,6 +60,14 @@ def overpass_request(bbox):
     return json.load(reader(response))['elements']
 
 
+def is_part_of_stop(tags):
+    if tags.get('public_transport') in ('platform', 'stop_position'):
+        return True
+    if tags.get('railway') == 'platform':
+        return True
+    return False
+
+
 def add_stop_areas(src):
     if not src:
         raise Exception('Empty dataset provided to add_stop_areas')
@@ -89,8 +97,9 @@ def add_stop_areas(src):
             if el_id(m) not in elements:
                 continue
             pel = elements[el_id(m)]
-            if (pel['tags'].get('railway') != 'platform' and
-                    pel['tags'].get('public_transport') != 'platform'):
+            if not is_part_of_stop(pel['tags']):
+                continue
+            if pel['tags'].get('railway') == 'tram_stop':
                 continue
             coords = pel.get('center', pel)
             station = stations.search_nn((coords['lon'], coords['lat']))[0].data

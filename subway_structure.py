@@ -69,10 +69,9 @@ def project_on_line(p, line):
     def project_on_segment(p, p1, p2):
         dp = (p2[0] - p1[0], p2[1] - p1[1])
         d2 = dp[0]*dp[0] + dp[1]*dp[1]
-        try:
-            u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
-        except ZeroDivisionError:
+        if d2 < 1e-14:
             return None
+        u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
         res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
         if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
             return None

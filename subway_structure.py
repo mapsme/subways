@@ -467,7 +467,7 @@ class Route:
             return False
         if 'members' not in el:
             return False
-        if el['tags'].get('route') not in modes:
+        if all(el['tags'].get(tag) not in modes for tag in ('route', 'line')):
             return False
         for k in CONSTRUCTION_KEYS:
             if k in el['tags']:
@@ -610,7 +610,7 @@ class Route:
         self.ref = relation['tags'].get('ref', master_tags.get(
             'ref', relation['tags'].get('name', None)))
         self.name = relation['tags'].get('name', None)
-        self.mode = relation['tags']['route']
+        self.mode = relation['tags'].get('line', relation['tags']['route'])
         if 'colour' not in relation['tags'] and 'colour' not in master_tags and self.mode != 'tram':
             city.warn('Missing colour on a route', relation)
         try:
@@ -785,7 +785,8 @@ class RouteMaster:
             except ValueError:
                 self.colour = None
             self.network = Route.get_network(master)
-            self.mode = master['tags'].get('route_master', None)  # This tag is required, but okay
+            self.mode = master['tags'].get('line',
+                master['tags'].get('route_master', None))  # This tag is required, but okay
             self.name = master['tags'].get('name', None)
             self.interval = Route.get_interval(master['tags'])
             self.interval_from_master = self.interval is not None

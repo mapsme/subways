@@ -467,7 +467,7 @@ class Route:
             return False
         if 'members' not in el:
             return False
-        if el['tags'].get('line', el['tags']['route']) not in modes:
+        if el['tags'].get('line', el['tags'].get('route')) not in modes:
             return False
         for k in CONSTRUCTION_KEYS:
             if k in el['tags']:

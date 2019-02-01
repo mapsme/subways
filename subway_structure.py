@@ -1221,15 +1221,15 @@ def find_transfers(elements, cities):
                 el.get('tags', {}).get('public_transport') == 'stop_area_group'):
             stop_area_groups.append(el)
 
-    # A tuple(sa.id, sa.station is None) uniquely identifies a StopArea.
+    # StopArea.id uniquely identifies a StopArea.
     # We must ensure StopArea uniqueness since one stop_area relation may result in
     # several StopArea instances at inter-city interchanges.
-    stop_area_ids = defaultdict(set)  # el_id -> set of tuples (sa.id, sa.station is None)
-    stop_area_objects = dict()  # tuple(sa.id, sa.station is None) -> one of StopArea instances
+    stop_area_ids = defaultdict(set)  # el_id -> set of StopArea.id
+    stop_area_objects = dict()  # StopArea.id -> one of StopArea instances
     for city in cities:
         for el, st in city.stations.items():
-            stop_area_ids[el].update((sa.id, sa.station is None) for sa in st)
-            stop_area_objects.update(((sa.id, sa.station is None), sa) for sa in st)
+            stop_area_ids[el].update(sa.id for sa in st)
+            stop_area_objects.update((sa.id, sa) for sa in st)
 
     for sag in stop_area_groups:
         transfer = set()

@@ -18,7 +18,7 @@ from itertools import chain
 def compare_jsons(result0, result1):
 
     def floats_eq(a, b):
-        return abs(b - a) < 1e-14
+        return abs(b - a) < 1e-13
 
     def coords_eq(lon1, lat1, lon2, lat2):
         return floats_eq(lon1, lon2) and floats_eq(lat1, lat2)

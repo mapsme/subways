@@ -225,14 +225,6 @@ class Station:
         return 'Station(id={}, modes={}, name={}, center={})'.format(
             self.id, ','.join(self.modes), self.name, self.center)
 
-    def __hash__(self):
-        return hash(self.__repr__())
-
-    def __eq__(self, other):
-        if isinstance(other, Station):
-            return self.id == other.id
-        return False
-
 
 class StopArea:
     @staticmethod
@@ -365,14 +357,6 @@ class StopArea:
     def __repr__(self):
         return 'StopArea(id={}, name={}, station={}, transfer={}, center={})'.format(
             self.id, self.name, self.station, self.transfer, self.center)
-
-    def __hash__(self):
-        return hash(self.__repr__())
-
-    def __eq__(self, other):
-        if isinstance(other, StopArea):
-            return self.id == other.id and self.station == other.station
-        return False
 
 
 class RouteStop:
@@ -1237,18 +1221,23 @@ def find_transfers(elements, cities):
                 el.get('tags', {}).get('public_transport') == 'stop_area_group'):
             stop_area_groups.append(el)
 
-    stations = defaultdict(set)  # el_id -> list of station objects
+    # StopArea.id uniquely identifies a StopArea.
+    # We must ensure StopArea uniqueness since one stop_area relation may result in
+    # several StopArea instances at inter-city interchanges.
+    stop_area_ids = defaultdict(set)  # el_id -> set of StopArea.id
+    stop_area_objects = dict()  # StopArea.id -> one of StopArea instances
     for city in cities:
         for el, st in city.stations.items():
-            stations[el].update(st)
+            stop_area_ids[el].update(sa.id for sa in st)
+            stop_area_objects.update((sa.id, sa) for sa in st)
 
     for sag in stop_area_groups:
         transfer = set()
         for m in sag['members']:
             k = el_id(m)
-            if k not in stations:
+            if k not in stop_area_ids:
                 continue
-            transfer.update(stations[k])
+            transfer.update(stop_area_objects[sa_id] for sa_id in stop_area_ids[k])
         if len(transfer) > 1:
             transfers.append(transfer)
     return transfers

@@ -243,7 +243,7 @@ def process(cities, transfers, cache_name):
 
     if cache_name:
         with open(cache_name, 'w', encoding='utf-8') as f:
-            json.dump(cache, f, indent=2, ensure_ascii=False)
+            json.dump(cache, f, ensure_ascii=False)
 
     m_transfers = [(stop1_uid, stop2_uid, transfer_time)
                    for (stop1_uid, stop2_uid), transfer_time in c_transfers.items()]

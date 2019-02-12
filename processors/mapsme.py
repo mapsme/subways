@@ -87,19 +87,20 @@ def process(cities, transfers, cache_name):
     networks = []
 
     good_cities = [c for c in cities if c.is_good()]
+    city_names = set(c.name for c in cities)
     good_city_names = set(c.name for c in good_cities)
     recovered_city_names = set()
 
-    for city_name, city_cached_data in cache.items():
-        if city_name in good_city_names:
-            continue
-        # TODO: get a network, stops and transfers from cache
-        city = [c for c in cities if c.name == city_name][0]
-        if is_cached_city_usable(city, city_cached_data):
-            stops.update(city_cached_data['stops'])
-            networks.append(city_cached_data['network'])
-            print("Taking {} from cache".format(city_name))
-            recovered_city_names.add(city.name)
+    # Try take bad cities from cache.
+    for city_name in (city_names - good_city_names):
+        if city_name in cache:
+            city_cached_data = cache[city_name]
+            city = [c for c in cities if c.name == city_name][0]
+            if is_cached_city_usable(city, city_cached_data):
+                stops.update(city_cached_data['stops'])
+                networks.append(city_cached_data['network'])
+                print("Taking {} from cache".format(city_name))
+                recovered_city_names.add(city.name)
 
     platform_nodes = {}
 

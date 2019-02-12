@@ -72,12 +72,12 @@ def compare_jsons(result0, result1):
             for itin0, itin1 in zip(itineraries0, itineraries1):
                 if itin0['interval'] != itin1['interval']:
                     print("Different interval:",
-                          f"{itin0['interval']} != {itin1['interval']}"
-                          f" at route {route0['name']} {route0['route_id']}")
+                          itin0['interval'], "!=",  itin1['interval'],
+                          "at route", route0['name'], route0['route_id'])
                     return False
                 if itin0['stops'] != itin1['stops']:
-                    print(f"Different stops at route",
-                          f"{route0['name']} {route0['route_id']}")
+                    print("Different stops at route",
+                          route0['name'], route0['route_id'])
                     return False
 
     stop_ids0 = sorted(x['id'] for x in result0['stops'])

@@ -48,19 +48,19 @@ def process(cities, transfers, cache_name):
 
     def is_cached_city_usable(city, city_cache_data):
         """Checks if cached stops and entrances still exist in osm data"""
-        for stop_area_id, cached_stop_area in city_cache_data['stops'].items():
-            station_id = cached_stop_area['osm_type'][0] + str(cached_stop_area['osm_id'])
+        for stoparea_id, cached_stoparea in city_cache_data['stops'].items():
+            station_id = cached_stoparea['osm_type'][0] + str(cached_stoparea['osm_id'])
             city_station = city.elements.get(station_id)
             if (not city_station or
                 not Station.is_station(city_station, city.modes) or
                 distance(el_center(city_station),
-                         tuple(cached_stop_area[coord] for coord in ('lon', 'lat'))
+                         tuple(cached_stoparea[coord] for coord in ('lon', 'lat'))
                         ) > CLOSENESS_TO_CACHED_ELEMENT_THRESHOLD
             ):
                 return False
 
-            for cached_entrance in itertools.chain(cached_stop_area['entrances'],
-                                                   cached_stop_area['exits']):
+            for cached_entrance in itertools.chain(cached_stoparea['entrances'],
+                                                   cached_stoparea['exits']):
                 entrance_id = cached_entrance['osm_type'][0] + str(cached_entrance['osm_id'])
                 city_entrance = city.elements.get(entrance_id)
                 if (not city_entrance or
@@ -69,7 +69,8 @@ def process(cities, transfers, cache_name):
                             ) > CLOSENESS_TO_CACHED_ELEMENT_THRESHOLD
                 ):
                     pass  # TODO:
-                          # return False?
+                          # really pass (take cached entances as they are)?
+                          # Or return False?
                           # Or count broken entrances and leave only good?
                           # Or ignore all old entrances and use station point as entrance and exit?
 
@@ -81,33 +82,36 @@ def process(cities, transfers, cache_name):
         with open(cache_name, 'r', encoding='utf-8') as f:
             cache = json.load(f)
 
-    route_stops = {}  # stop_area el_id -> RouteStop instance
-    stops = {}  # stop_area el_id -> stop jsonified data
+    stop_areas = {}  # stoparea el_id -> StopArea instance
+    stops = {}  # stoparea el_id -> stop jsonified data
     networks = []
 
     good_cities = [c for c in cities if c.is_good()]
     good_city_names = set(c.name for c in good_cities)
+    recovered_city_names = set()
 
     for city_name, city_cached_data in cache.items():
         if city_name in good_city_names:
             continue
-        # TODO: get a network, stops [[and transfers (?)]] from cache
+        # TODO: get a network, stops and transfers from cache
         city = [c for c in cities if c.name == city_name][0]
         if is_cached_city_usable(city, city_cached_data):
             stops.update(city_cached_data['stops'])
             networks.append(city_cached_data['network'])
             print("Taking {} from cache".format(city_name))
+            recovered_city_names.add(city.name)
 
     platform_nodes = {}
 
-    # One stop_area may participate in routes of different cities
-    stop_cities = defaultdict(set)  # stop_area id -> city names
+    # One stoparea may participate in routes of different cities
+    stop_cities = defaultdict(set)  # stoparea id -> city names
 
     for city in good_cities:
         network = {'network': city.name, 'routes': [], 'agency_id': city.id}
         cache[city.name] = {
             'network': network,
-            'stops': {}  # stop_area el_id -> jsonified stop data
+            'stops': {},  # stoparea el_id -> jsonified stop data
+            'transfers': []  # list of tuples (stoparea1_uid, stoparea2_uid, time); uid1 < uid2
         }
         for route in city:
             routes = {
@@ -124,7 +128,7 @@ def process(cities, transfers, cache_name):
             for i, variant in enumerate(route):
                 itin = []
                 for stop in variant:
-                    route_stops[stop.stoparea.id] = stop.stoparea
+                    stop_areas[stop.stoparea.id] = stop.stoparea
                     stop_cities[stop.stoparea.id].add(city.name)
                     itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
                     # Make exits from platform nodes, if we don't have proper exits
@@ -156,7 +160,7 @@ def process(cities, transfers, cache_name):
             network['routes'].append(routes)
         networks.append(network)
 
-    for stop_id, stop in route_stops.items():
+    for stop_id, stop in stop_areas.items():
         st = {
             'name': stop.name,
             'int_name': stop.int_name,
@@ -208,26 +212,44 @@ def process(cities, transfers, cache_name):
 
     m_stops = list(stops.values())
 
-    c_transfers = []
+    c_transfers = {}  # (stoparea1_uid, stoparea2_uid) -> time;  uid1 < uid2
     for t_set in transfers:
         t = list(t_set)
         for t_first in range(len(t) - 1):
             for t_second in range(t_first + 1, len(t)):
-                if t[t_first].id in stops and t[t_second].id in stops:
-                    c_transfers.append([
-                        uid(t[t_first].id),
-                        uid(t[t_second].id),
-                        30 + round(distance(t[t_first].center,
-                                            t[t_second].center)*3.6/SPEED_ON_TRANSFER)
-                    ])
+                stoparea1 = t[t_first]
+                stoparea2 = t[t_second]
+                if stoparea1.id in stops and stoparea2.id in stops:
+                    uid1 = uid(stoparea1.id)
+                    uid2 = uid(stoparea2.id)
+                    uid1, uid2 = sorted([uid1, uid2])
+                    transfer_time = (30 + round(distance(stoparea1.center,
+                                                         stoparea2.center
+                                                ) * 3.6/SPEED_ON_TRANSFER))
+                    c_transfers[(uid1, uid2)] = transfer_time
+                    # If a transfer is inside a good city, add it to the city's cache.
+                    for city_name in (good_city_names &
+                                      stop_cities[stoparea1.id] &
+                                      stop_cities[stoparea2.id]):
+                        cache[city_name]['transfers'].append((uid1, uid2, transfer_time))
+
+    # Some transfers may be corrupted in not good cities.
+    # Take them from recovered cities.
+    for city_name in recovered_city_names:
+        for stop1_uid, stop2_uid, transfer_time in cache[city_name]['transfers']:
+            if (stop1_uid, stop2_uid) not in c_transfers:
+                c_transfers[(stop1_uid, stop2_uid)] = transfer_time
 
     if cache_name:
         with open(cache_name, 'w', encoding='utf-8') as f:
-            json.dump(cache, f, ensure_ascii=False)
+            json.dump(cache, f, indent=2, ensure_ascii=False)
+
+    m_transfers = [(stop1_uid, stop2_uid, transfer_time)
+                   for (stop1_uid, stop2_uid), transfer_time in c_transfers.items()]
 
     result = {
         'stops': m_stops,
-        'transfers': c_transfers,
+        'transfers': m_transfers,
         'networks': networks
     }
     return result

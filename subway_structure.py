@@ -23,7 +23,6 @@ RAILWAY_TYPES = set(('rail', 'light_rail', 'subway', 'narrow_gauge',
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
 NOWHERE_STOP = (0, 0)  # too far away from any metro system
 
-transfers = []
 used_entrances = set()
 
 
@@ -1213,7 +1212,6 @@ class City:
 
 
 def find_transfers(elements, cities):
-    global transfers
     transfers = []
     stop_area_groups = []
     for el in elements:

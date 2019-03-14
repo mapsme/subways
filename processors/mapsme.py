@@ -1,6 +1,6 @@
 import json
 import os
-import itertools
+import logging
 from collections import defaultdict
 from subway_structure import distance, el_center, Station
 
@@ -11,18 +11,152 @@ SPEED_TO_ENTRANCE = 5  # km/h
 SPEED_ON_TRANSFER = 3.5
 SPEED_ON_LINE = 40
 DEFAULT_INTERVAL = 2.5  # minutes
-CLOSENESS_TO_CACHED_ELEMENT_THRESHOLD = 300  # meters
+DISPLACEMENT_TOLERANCE = 300  # meters
 
 
-def process(cities, transfers, cache_name):
-    def uid(elid, typ=None):
-        t = elid[0]
-        osm_id = int(elid[1:])
-        if not typ:
-            osm_id = (osm_id << 2) + OSM_TYPES[t][0]
-        elif typ != t:
-            raise Exception('Got {}, expected {}'.format(elid, typ))
-        return osm_id << 1
+def uid(elid, typ=None):
+    t = elid[0]
+    osm_id = int(elid[1:])
+    if not typ:
+        osm_id = (osm_id << 2) + OSM_TYPES[t][0]
+    elif typ != t:
+        raise Exception('Got {}, expected {}'.format(elid, typ))
+    return osm_id << 1
+
+
+class DummyCache:
+    """This class may be used when you need to omit all cache processing"""
+
+    def __init__(selfself, cache_path, cities):
+        pass
+
+    def __getattr__(self, name):
+        """This results in that a call to any method effectively does nothing
+        and does not generate exceptions."""
+        def method(*args, **kwargs):
+            pass
+        return method
+
+
+class MapsmeCache:
+    def __init__(self, cache_path, cities):
+        if not cache_path:
+            # cache is not used, all actions with cache must be silently skipped
+            self.is_used = False
+            return
+        self.cache_path = cache_path
+        self.is_used = True
+        self.cache = {}
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    self.cache = json.load(f)
+            except json.decoder.JSONDecodeError:
+                logging.warning("City cache '%s' is not a valid json file. "
+                                "Building cache from scratch.", cache_path)
+        self.recovered_city_names = set()
+        # One stoparea may participate in routes of different cities
+        self.stop_cities = defaultdict(set)  # stoparea id -> city names
+        self.city_dict = {c.name: c for c in cities}
+        self.good_city_names = {c.name for c in cities if c.is_good()}
+
+    def _is_cached_city_usable(self, city):
+        """Check if cached stations still exist in osm data and
+        not moved far away.
+        """
+        city_cache_data = self.cache[city.name]
+        for stoparea_id, cached_stoparea in city_cache_data['stops'].items():
+            station_id = cached_stoparea['osm_type'][0] + str(cached_stoparea['osm_id'])
+            city_station = city.elements.get(station_id)
+
+            station_coords = el_center(city_station)
+            cached_station_coords = tuple(cached_stoparea[coord] for coord in ('lon', 'lat'))
+            displacement = distance(station_coords, cached_station_coords)
+            if (not city_station or
+                not Station.is_station(city_station, city.modes) or
+                displacement > DISPLACEMENT_TOLERANCE
+            ):
+                return False
+
+        return True
+
+    def provide_stops_and_networks(self, stops, networks):
+        """Put stops and networks for bad cities into containers
+        passed as arguments."""
+        if not self.is_used:
+            return
+        for city in self.city_dict.values():
+            if not city.is_good() and city.name in self.cache:
+                city_cached_data = self.cache[city.name]
+                if self._is_cached_city_usable(city.name):
+                    stops.update(city_cached_data['stops'])
+                    networks.append(city_cached_data['network'])
+                    logging.info("Taking %s from cache", city.name)
+                    self.recovered_city_names.add(city.name)
+
+    def provide_transfers(self, transfers):
+        """Add transfers from usable cached cities to 'transfers' dict
+        passed as argument."""
+        if not self.is_used:
+            return
+        for city_name in self.recovered_city_names:
+            city_cached_transfers = self.cache[city_name]['transfers']
+            for stop1_uid, stop2_uid, transfer_time in city_cached_transfers:
+                if (stop1_uid, stop2_uid) not in transfers:
+                    transfers[(stop1_uid, stop2_uid)] = transfer_time
+
+    def initialize_good_city(self, city_name, network):
+        """Create/replace one cache element with new data container.
+        This should be done for each good city."""
+        if not self.is_used:
+            return
+        self.cache[city_name] = {
+            'network': network,
+            'stops': {},  # stoparea el_id -> jsonified stop data
+            'transfers': []  # list of tuples (stoparea1_uid, stoparea2_uid, time); uid1 < uid2
+        }
+
+    def link_stop_with_city(self, stoparea_id, city_name):
+        """Remember that some stop_area is used in a city."""
+        if not self.is_used:
+            return
+        stoparea_uid = uid(stoparea_id)
+        self.stop_cities[stoparea_uid].add(city_name)
+
+    def add_stop(self, stoparea_id, st):
+        """Add stoparea to the cache of each city the stoparea is in."""
+        if not self.is_used:
+            return
+        stoparea_uid = uid(stoparea_id)
+        for city_name in self.stop_cities[stoparea_uid]:
+            self.cache[city_name]['stops'][stoparea_id] = st
+
+    def add_transfer(self, stoparea1_uid, stoparea2_uid, transfer_time):
+        """If a transfer is inside a good city, add it to the city's cache."""
+        if not self.is_used:
+            return
+        for city_name in (self.good_city_names &
+                          self.stop_cities[stoparea1_uid] &
+                          self.stop_cities[stoparea2_uid]):
+            self.cache[city_name]['transfers'].append(
+                (stoparea1_uid, stoparea2_uid, transfer_time)
+            )
+
+    def save(self):
+        if not self.is_used:
+            return
+        try:
+            with open(self.cache_path, 'w', encoding='utf-8') as f:
+                json.dump(self.cache, f, ensure_ascii=False)
+        except Exception as e:
+            logging.warning("Failed to save cache: %s", str(e))
+
+
+def process(cities, transfers, cache_path):
+    """cities - list of City instances;
+    transfers - list of sets of StopArea.id;
+    cache_path - path to json-file with good cities cache or None.
+    """
 
     def format_colour(c):
         return c[1:] if c else None
@@ -46,74 +180,18 @@ def process(cities, transfers, cache_name):
                 exits.append(n)
         return exits
 
-    def is_cached_city_usable(city, city_cache_data):
-        """Checks if cached stops and entrances still exist in osm data"""
-        for stoparea_id, cached_stoparea in city_cache_data['stops'].items():
-            station_id = cached_stoparea['osm_type'][0] + str(cached_stoparea['osm_id'])
-            city_station = city.elements.get(station_id)
-            if (not city_station or
-                not Station.is_station(city_station, city.modes) or
-                distance(el_center(city_station),
-                         tuple(cached_stoparea[coord] for coord in ('lon', 'lat'))
-                        ) > CLOSENESS_TO_CACHED_ELEMENT_THRESHOLD
-            ):
-                return False
 
-            for cached_entrance in itertools.chain(cached_stoparea['entrances'],
-                                                   cached_stoparea['exits']):
-                entrance_id = cached_entrance['osm_type'][0] + str(cached_entrance['osm_id'])
-                city_entrance = city.elements.get(entrance_id)
-                if (not city_entrance or
-                    distance(el_center(city_entrance),
-                             tuple(cached_entrance[coord] for coord in ('lon', 'lat'))
-                            ) > CLOSENESS_TO_CACHED_ELEMENT_THRESHOLD
-                ):
-                    pass  # TODO:
-                          # really pass (take cached entances as they are)?
-                          # Or return False?
-                          # Or count broken entrances and leave only good?
-                          # Or ignore all old entrances and use station point as entrance and exit?
-
-        return True
-
-
-    cache = {}
-    if cache_name and os.path.exists(cache_name):
-        with open(cache_name, 'r', encoding='utf-8') as f:
-            cache = json.load(f)
+    cache = MapsmeCache(cache_path, cities)
 
     stop_areas = {}  # stoparea el_id -> StopArea instance
     stops = {}  # stoparea el_id -> stop jsonified data
     networks = []
-
     good_cities = [c for c in cities if c.is_good()]
-    city_names = set(c.name for c in cities)
-    good_city_names = set(c.name for c in good_cities)
-    recovered_city_names = set()
-
-    # Try take bad cities from cache.
-    for city_name in (city_names - good_city_names):
-        if city_name in cache:
-            city_cached_data = cache[city_name]
-            city = [c for c in cities if c.name == city_name][0]
-            if is_cached_city_usable(city, city_cached_data):
-                stops.update(city_cached_data['stops'])
-                networks.append(city_cached_data['network'])
-                print("Taking {} from cache".format(city_name))
-                recovered_city_names.add(city.name)
-
     platform_nodes = {}
-
-    # One stoparea may participate in routes of different cities
-    stop_cities = defaultdict(set)  # stoparea id -> city names
 
     for city in good_cities:
         network = {'network': city.name, 'routes': [], 'agency_id': city.id}
-        cache[city.name] = {
-            'network': network,
-            'stops': {},  # stoparea el_id -> jsonified stop data
-            'transfers': []  # list of tuples (stoparea1_uid, stoparea2_uid, time); uid1 < uid2
-        }
+        cache.initialize_good_city(city.name, network)
         for route in city:
             routes = {
                 'type': route.mode,
@@ -130,7 +208,7 @@ def process(cities, transfers, cache_name):
                 itin = []
                 for stop in variant:
                     stop_areas[stop.stoparea.id] = stop.stoparea
-                    stop_cities[stop.stoparea.id].add(city.name)
+                    cache.link_stop_with_city(stop.stoparea.id, city.name)
                     itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
                     # Make exits from platform nodes, if we don't have proper exits
                     if len(stop.stoparea.entrances) + len(stop.stoparea.exits) == 0:
@@ -208,12 +286,9 @@ def process(cities, transfers, cache_name):
                     })
 
         stops[stop_id] = st
-        for city_name in stop_cities[stop_id]:
-            cache[city_name]['stops'][stop_id] = st
+        cache.add_stop(stop_id, st)
 
-    m_stops = list(stops.values())
-
-    c_transfers = {}  # (stoparea1_uid, stoparea2_uid) -> time;  uid1 < uid2
+    pairwise_transfers = {}  # (stoparea1_uid, stoparea2_uid) -> time;  uid1 < uid2
     for t_set in transfers:
         t = list(t_set)
         for t_first in range(len(t) - 1):
@@ -227,30 +302,19 @@ def process(cities, transfers, cache_name):
                     transfer_time = (30 + round(distance(stoparea1.center,
                                                          stoparea2.center
                                                 ) * 3.6/SPEED_ON_TRANSFER))
-                    c_transfers[(uid1, uid2)] = transfer_time
-                    # If a transfer is inside a good city, add it to the city's cache.
-                    for city_name in (good_city_names &
-                                      stop_cities[stoparea1.id] &
-                                      stop_cities[stoparea2.id]):
-                        cache[city_name]['transfers'].append((uid1, uid2, transfer_time))
+                    pairwise_transfers[(uid1, uid2)] = transfer_time
+                    cache.add_transfer(uid1, uid2, transfer_time)
 
-    # Some transfers may be corrupted in not good cities.
-    # Take them from recovered cities.
-    for city_name in recovered_city_names:
-        for stop1_uid, stop2_uid, transfer_time in cache[city_name]['transfers']:
-            if (stop1_uid, stop2_uid) not in c_transfers:
-                c_transfers[(stop1_uid, stop2_uid)] = transfer_time
+    cache.provide_transfers(pairwise_transfers)
+    cache.save()
 
-    if cache_name:
-        with open(cache_name, 'w', encoding='utf-8') as f:
-            json.dump(cache, f, ensure_ascii=False)
-
-    m_transfers = [(stop1_uid, stop2_uid, transfer_time)
-                   for (stop1_uid, stop2_uid), transfer_time in c_transfers.items()]
+    pairwise_transfers = [(stop1_uid, stop2_uid, transfer_time)
+                            for (stop1_uid, stop2_uid), transfer_time
+                            in pairwise_transfers.items()]
 
     result = {
-        'stops': m_stops,
-        'transfers': m_transfers,
+        'stops': list(stops.values()),
+        'transfers': pairwise_transfers,
         'networks': networks
     }
     return result

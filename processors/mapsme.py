@@ -34,7 +34,7 @@ class DummyCache:
         """This results in that a call to any method effectively does nothing
         and does not generate exceptions."""
         def method(*args, **kwargs):
-            pass
+            return None
         return method
 
 
@@ -68,73 +68,74 @@ class MapsmeCache:
         for stoparea_id, cached_stoparea in city_cache_data['stops'].items():
             station_id = cached_stoparea['osm_type'][0] + str(cached_stoparea['osm_id'])
             city_station = city.elements.get(station_id)
-
+            if (not city_station or
+                    not Station.is_station(city_station, city.modes)):
+                return False
             station_coords = el_center(city_station)
             cached_station_coords = tuple(cached_stoparea[coord] for coord in ('lon', 'lat'))
             displacement = distance(station_coords, cached_station_coords)
-            if (not city_station or
-                not Station.is_station(city_station, city.modes) or
-                displacement > DISPLACEMENT_TOLERANCE
-            ):
+            if  displacement > DISPLACEMENT_TOLERANCE:
                 return False
 
         return True
 
+    def _skip_if_not_used(func):
+        """Decorator to skip method execution under certain condition."""
+        def inner(self, *args, **kwargs):
+            if not self.is_used:
+                return
+            return func(self, *args, **kwargs)
+        return inner
+
+    @_skip_if_not_used
     def provide_stops_and_networks(self, stops, networks):
         """Put stops and networks for bad cities into containers
         passed as arguments."""
-        if not self.is_used:
-            return
         for city in self.city_dict.values():
             if not city.is_good() and city.name in self.cache:
                 city_cached_data = self.cache[city.name]
-                if self._is_cached_city_usable(city.name):
+                if self._is_cached_city_usable(city):
                     stops.update(city_cached_data['stops'])
                     networks.append(city_cached_data['network'])
                     logging.info("Taking %s from cache", city.name)
                     self.recovered_city_names.add(city.name)
 
+    @_skip_if_not_used
     def provide_transfers(self, transfers):
         """Add transfers from usable cached cities to 'transfers' dict
         passed as argument."""
-        if not self.is_used:
-            return
         for city_name in self.recovered_city_names:
             city_cached_transfers = self.cache[city_name]['transfers']
             for stop1_uid, stop2_uid, transfer_time in city_cached_transfers:
                 if (stop1_uid, stop2_uid) not in transfers:
                     transfers[(stop1_uid, stop2_uid)] = transfer_time
 
+    @_skip_if_not_used
     def initialize_good_city(self, city_name, network):
         """Create/replace one cache element with new data container.
         This should be done for each good city."""
-        if not self.is_used:
-            return
         self.cache[city_name] = {
             'network': network,
             'stops': {},  # stoparea el_id -> jsonified stop data
             'transfers': []  # list of tuples (stoparea1_uid, stoparea2_uid, time); uid1 < uid2
         }
 
+    @_skip_if_not_used
     def link_stop_with_city(self, stoparea_id, city_name):
         """Remember that some stop_area is used in a city."""
-        if not self.is_used:
-            return
         stoparea_uid = uid(stoparea_id)
         self.stop_cities[stoparea_uid].add(city_name)
 
+    @_skip_if_not_used
     def add_stop(self, stoparea_id, st):
         """Add stoparea to the cache of each city the stoparea is in."""
-        if not self.is_used:
-            return
         stoparea_uid = uid(stoparea_id)
         for city_name in self.stop_cities[stoparea_uid]:
             self.cache[city_name]['stops'][stoparea_id] = st
 
+    @_skip_if_not_used
     def add_transfer(self, stoparea1_uid, stoparea2_uid, transfer_time):
         """If a transfer is inside a good city, add it to the city's cache."""
-        if not self.is_used:
-            return
         for city_name in (self.good_city_names &
                           self.stop_cities[stoparea1_uid] &
                           self.stop_cities[stoparea2_uid]):
@@ -142,9 +143,8 @@ class MapsmeCache:
                 (stoparea1_uid, stoparea2_uid, transfer_time)
             )
 
+    @_skip_if_not_used
     def save(self):
-        if not self.is_used:
-            return
         try:
             with open(self.cache_path, 'w', encoding='utf-8') as f:
                 json.dump(self.cache, f, ensure_ascii=False)
@@ -188,6 +188,7 @@ def process(cities, transfers, cache_path):
     networks = []
     good_cities = [c for c in cities if c.is_good()]
     platform_nodes = {}
+    cache.provide_stops_and_networks(stops, networks)
 
     for city in good_cities:
         network = {'network': city.name, 'routes': [], 'agency_id': city.id}

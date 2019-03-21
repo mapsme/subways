@@ -1,13 +1,18 @@
 import logging
+import math
+import functools
 from itertools import chain
 
 
-def floats_eq(a, b):
-    return abs(b - a) < 1e-13
+"""A coordinate of a station precision of which we must take into account
+is calculated as an average of somewhat 10 elements.
+Taking machine epsilon 1e-15, averaging 10 numbers with close magnitudes
+ensures relative precision of 1e-14."""
+coord_isclose = functools.partial(math.isclose, rel_tol=1e-14)
 
 
 def coords_eq(lon1, lat1, lon2, lat2):
-    return floats_eq(lon1, lon2) and floats_eq(lat1, lat2)
+    return coord_isclose(lon1, lon2) and coord_isclose(lat1, lat2)
 
 
 def osm_id_comparator(el):
@@ -59,10 +64,14 @@ def compare_transfers(transfers0, transfers1):
                       len(transfers0), len(transfers1))
         return False
 
-    transfers0 = [tuple(t) if t[0] < t[1] else tuple([t[1], t[0], t[2]])
-                  for t in transfers0]
-    transfers1 = [tuple(t) if t[0] < t[1] else tuple([t[1], t[0], t[2]])
-                  for t in transfers1]
+    transfers0 = [tuple([t[0], t[1], t[2]])
+                      if t[0] < t[1] else
+                  tuple([t[1], t[0], t[2]])
+                      for t in transfers0]
+    transfers1 = [tuple([t[0], t[1], t[2]])
+                      if t[0] < t[1] else
+                  tuple([t[1], t[0], t[2]])
+                      for t in transfers1]
 
     transfers0.sort()
     transfers1.sort()

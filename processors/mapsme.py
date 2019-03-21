@@ -7,9 +7,11 @@ from subway_structure import distance, el_center, Station
 
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
 ENTRANCE_PENALTY = 60  # seconds
-SPEED_TO_ENTRANCE = 5  # km/h
-SPEED_ON_TRANSFER = 3.5
-SPEED_ON_LINE = 40
+TRANSFER_PENALTY = 30  # seconds
+KMPH_TO_MPS = 1/3.6  # km/h to m/s conversion multiplier
+SPEED_TO_ENTRANCE = 5 * KMPH_TO_MPS  # m/s
+SPEED_ON_TRANSFER = 3.5 * KMPH_TO_MPS  # m/s
+SPEED_ON_LINE = 40 * KMPH_TO_MPS  # m/s
 DEFAULT_INTERVAL = 2.5  # minutes
 DISPLACEMENT_TOLERANCE = 300  # meters
 
@@ -210,7 +212,7 @@ def process(cities, transfers, cache_path):
                 for stop in variant:
                     stop_areas[stop.stoparea.id] = stop.stoparea
                     cache.link_stop_with_city(stop.stoparea.id, city.name)
-                    itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
+                    itin.append([uid(stop.stoparea.id), round(stop.distance/SPEED_ON_LINE)])
                     # Make exits from platform nodes, if we don't have proper exits
                     if len(stop.stoparea.entrances) + len(stop.stoparea.exits) == 0:
                         for pl in stop.stoparea.platforms:
@@ -261,7 +263,7 @@ def process(cities, transfers, cache_path):
                         'lon': stop.centers[e][0],
                         'lat': stop.centers[e][1],
                         'distance': ENTRANCE_PENALTY + round(distance(
-                            stop.centers[e], stop.center)*3.6/SPEED_TO_ENTRANCE)
+                            stop.centers[e], stop.center)/SPEED_TO_ENTRANCE)
                     })
         if len(stop.entrances) + len(stop.exits) == 0:
             if stop.platforms:
@@ -274,7 +276,7 @@ def process(cities, transfers, cache_path):
                                 'lon': n['lon'],
                                 'lat': n['lat'],
                                 'distance': ENTRANCE_PENALTY + round(distance(
-                                    (n['lon'], n['lat']), stop.center)*3.6/SPEED_TO_ENTRANCE)
+                                    (n['lon'], n['lat']), stop.center)/SPEED_TO_ENTRANCE)
                             })
             else:
                 for k in ('entrances', 'exits'):
@@ -300,9 +302,10 @@ def process(cities, transfers, cache_path):
                     uid1 = uid(stoparea1.id)
                     uid2 = uid(stoparea2.id)
                     uid1, uid2 = sorted([uid1, uid2])
-                    transfer_time = (30 + round(distance(stoparea1.center,
-                                                         stoparea2.center
-                                                ) * 3.6/SPEED_ON_TRANSFER))
+                    transfer_time = (TRANSFER_PENALTY +
+                                        round(distance(stoparea1.center,
+                                                       stoparea2.center
+                                             )/SPEED_ON_TRANSFER))
                     pairwise_transfers[(uid1, uid2)] = transfer_time
                     cache.add_transfer(uid1, uid2, transfer_time)
 

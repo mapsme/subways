@@ -40,6 +40,16 @@ class DummyCache:
         return method
 
 
+def _skip_if_not_used(func):
+    """Decorator to skip method execution under certain condition.
+    Relies on "is_used" object property."""
+    def inner(self, *args, **kwargs):
+        if not self.is_used:
+            return
+        return func(self, *args, **kwargs)
+    return inner
+
+
 class MapsmeCache:
     def __init__(self, cache_path, cities):
         if not cache_path:
@@ -80,14 +90,6 @@ class MapsmeCache:
                 return False
 
         return True
-
-    def _skip_if_not_used(func):
-        """Decorator to skip method execution under certain condition."""
-        def inner(self, *args, **kwargs):
-            if not self.is_used:
-                return
-            return func(self, *args, **kwargs)
-        return inner
 
     @_skip_if_not_used
     def provide_stops_and_networks(self, stops, networks):

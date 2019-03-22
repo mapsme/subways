@@ -29,7 +29,7 @@ def uid(elid, typ=None):
 class DummyCache:
     """This class may be used when you need to omit all cache processing"""
 
-    def __init__(selfself, cache_path, cities):
+    def __init__(self, cache_path, cities):
         pass
 
     def __getattr__(self, name):
@@ -40,13 +40,13 @@ class DummyCache:
         return method
 
 
-def _skip_if_not_used(func):
+def if_object_is_used(method):
     """Decorator to skip method execution under certain condition.
     Relies on "is_used" object property."""
     def inner(self, *args, **kwargs):
         if not self.is_used:
             return
-        return func(self, *args, **kwargs)
+        return method(self, *args, **kwargs)
     return inner
 
 
@@ -91,7 +91,7 @@ class MapsmeCache:
 
         return True
 
-    @_skip_if_not_used
+    @if_object_is_used
     def provide_stops_and_networks(self, stops, networks):
         """Put stops and networks for bad cities into containers
         passed as arguments."""
@@ -104,7 +104,7 @@ class MapsmeCache:
                     logging.info("Taking %s from cache", city.name)
                     self.recovered_city_names.add(city.name)
 
-    @_skip_if_not_used
+    @if_object_is_used
     def provide_transfers(self, transfers):
         """Add transfers from usable cached cities to 'transfers' dict
         passed as argument."""
@@ -114,7 +114,7 @@ class MapsmeCache:
                 if (stop1_uid, stop2_uid) not in transfers:
                     transfers[(stop1_uid, stop2_uid)] = transfer_time
 
-    @_skip_if_not_used
+    @if_object_is_used
     def initialize_good_city(self, city_name, network):
         """Create/replace one cache element with new data container.
         This should be done for each good city."""
@@ -124,20 +124,20 @@ class MapsmeCache:
             'transfers': []  # list of tuples (stoparea1_uid, stoparea2_uid, time); uid1 < uid2
         }
 
-    @_skip_if_not_used
+    @if_object_is_used
     def link_stop_with_city(self, stoparea_id, city_name):
         """Remember that some stop_area is used in a city."""
         stoparea_uid = uid(stoparea_id)
         self.stop_cities[stoparea_uid].add(city_name)
 
-    @_skip_if_not_used
+    @if_object_is_used
     def add_stop(self, stoparea_id, st):
         """Add stoparea to the cache of each city the stoparea is in."""
         stoparea_uid = uid(stoparea_id)
         for city_name in self.stop_cities[stoparea_uid]:
             self.cache[city_name]['stops'][stoparea_id] = st
 
-    @_skip_if_not_used
+    @if_object_is_used
     def add_transfer(self, stoparea1_uid, stoparea2_uid, transfer_time):
         """If a transfer is inside a good city, add it to the city's cache."""
         for city_name in (self.good_city_names &
@@ -147,7 +147,7 @@ class MapsmeCache:
                 (stoparea1_uid, stoparea2_uid, transfer_time)
             )
 
-    @_skip_if_not_used
+    @if_object_is_used
     def save(self):
         try:
             with open(self.cache_path, 'w', encoding='utf-8') as f:
@@ -304,10 +304,10 @@ def process(cities, transfers, cache_path):
                     uid1 = uid(stoparea1.id)
                     uid2 = uid(stoparea2.id)
                     uid1, uid2 = sorted([uid1, uid2])
-                    transfer_time = (TRANSFER_PENALTY +
-                                        round(distance(stoparea1.center,
-                                                       stoparea2.center
-                                             )/SPEED_ON_TRANSFER))
+                    transfer_time = (TRANSFER_PENALTY
+                                     + round(distance(stoparea1.center,
+                                                      stoparea2.center)
+                                                      / SPEED_ON_TRANSFER))
                     pairwise_transfers[(uid1, uid2)] = transfer_time
                     cache.add_transfer(uid1, uid2, transfer_time)
 

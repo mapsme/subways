@@ -406,5 +406,5 @@ if __name__ == '__main__':
         json.dump(res, options.log)
 
     if options.output:
-        json.dump(processor.process(good_cities, transfers, options.cache),
+        json.dump(processor.process(cities, transfers, options.cache),
                   options.output, indent=1, ensure_ascii=False)

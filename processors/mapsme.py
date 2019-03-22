@@ -1,24 +1,166 @@
 import json
-from subway_structure import distance
+import os
+import logging
+from collections import defaultdict
+from subway_structure import distance, el_center, Station
 
 
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
 ENTRANCE_PENALTY = 60  # seconds
-SPEED_TO_ENTRANCE = 5  # km/h
-SPEED_ON_TRANSFER = 3.5
-SPEED_ON_LINE = 40
+TRANSFER_PENALTY = 30  # seconds
+KMPH_TO_MPS = 1/3.6  # km/h to m/s conversion multiplier
+SPEED_TO_ENTRANCE = 5 * KMPH_TO_MPS  # m/s
+SPEED_ON_TRANSFER = 3.5 * KMPH_TO_MPS  # m/s
+SPEED_ON_LINE = 40 * KMPH_TO_MPS  # m/s
 DEFAULT_INTERVAL = 2.5  # minutes
+DISPLACEMENT_TOLERANCE = 300  # meters
 
 
-def process(cities, transfers, cache_name):
-    def uid(elid, typ=None):
-        t = elid[0]
-        osm_id = int(elid[1:])
-        if not typ:
-            osm_id = osm_id << 2 + OSM_TYPES[t][0]
-        elif typ != t:
-            raise Exception('Got {}, expected {}'.format(elid, typ))
-        return osm_id << 1
+def uid(elid, typ=None):
+    t = elid[0]
+    osm_id = int(elid[1:])
+    if not typ:
+        osm_id = (osm_id << 2) + OSM_TYPES[t][0]
+    elif typ != t:
+        raise Exception('Got {}, expected {}'.format(elid, typ))
+    return osm_id << 1
+
+
+class DummyCache:
+    """This class may be used when you need to omit all cache processing"""
+
+    def __init__(self, cache_path, cities):
+        pass
+
+    def __getattr__(self, name):
+        """This results in that a call to any method effectively does nothing
+        and does not generate exceptions."""
+        def method(*args, **kwargs):
+            return None
+        return method
+
+
+def if_object_is_used(method):
+    """Decorator to skip method execution under certain condition.
+    Relies on "is_used" object property."""
+    def inner(self, *args, **kwargs):
+        if not self.is_used:
+            return
+        return method(self, *args, **kwargs)
+    return inner
+
+
+class MapsmeCache:
+    def __init__(self, cache_path, cities):
+        if not cache_path:
+            # cache is not used, all actions with cache must be silently skipped
+            self.is_used = False
+            return
+        self.cache_path = cache_path
+        self.is_used = True
+        self.cache = {}
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    self.cache = json.load(f)
+            except json.decoder.JSONDecodeError:
+                logging.warning("City cache '%s' is not a valid json file. "
+                                "Building cache from scratch.", cache_path)
+        self.recovered_city_names = set()
+        # One stoparea may participate in routes of different cities
+        self.stop_cities = defaultdict(set)  # stoparea id -> city names
+        self.city_dict = {c.name: c for c in cities}
+        self.good_city_names = {c.name for c in cities if c.is_good()}
+
+    def _is_cached_city_usable(self, city):
+        """Check if cached stations still exist in osm data and
+        not moved far away.
+        """
+        city_cache_data = self.cache[city.name]
+        for stoparea_id, cached_stoparea in city_cache_data['stops'].items():
+            station_id = cached_stoparea['osm_type'][0] + str(cached_stoparea['osm_id'])
+            city_station = city.elements.get(station_id)
+            if (not city_station or
+                    not Station.is_station(city_station, city.modes)):
+                return False
+            station_coords = el_center(city_station)
+            cached_station_coords = tuple(cached_stoparea[coord] for coord in ('lon', 'lat'))
+            displacement = distance(station_coords, cached_station_coords)
+            if  displacement > DISPLACEMENT_TOLERANCE:
+                return False
+
+        return True
+
+    @if_object_is_used
+    def provide_stops_and_networks(self, stops, networks):
+        """Put stops and networks for bad cities into containers
+        passed as arguments."""
+        for city in self.city_dict.values():
+            if not city.is_good() and city.name in self.cache:
+                city_cached_data = self.cache[city.name]
+                if self._is_cached_city_usable(city):
+                    stops.update(city_cached_data['stops'])
+                    networks.append(city_cached_data['network'])
+                    logging.info("Taking %s from cache", city.name)
+                    self.recovered_city_names.add(city.name)
+
+    @if_object_is_used
+    def provide_transfers(self, transfers):
+        """Add transfers from usable cached cities to 'transfers' dict
+        passed as argument."""
+        for city_name in self.recovered_city_names:
+            city_cached_transfers = self.cache[city_name]['transfers']
+            for stop1_uid, stop2_uid, transfer_time in city_cached_transfers:
+                if (stop1_uid, stop2_uid) not in transfers:
+                    transfers[(stop1_uid, stop2_uid)] = transfer_time
+
+    @if_object_is_used
+    def initialize_good_city(self, city_name, network):
+        """Create/replace one cache element with new data container.
+        This should be done for each good city."""
+        self.cache[city_name] = {
+            'network': network,
+            'stops': {},  # stoparea el_id -> jsonified stop data
+            'transfers': []  # list of tuples (stoparea1_uid, stoparea2_uid, time); uid1 < uid2
+        }
+
+    @if_object_is_used
+    def link_stop_with_city(self, stoparea_id, city_name):
+        """Remember that some stop_area is used in a city."""
+        stoparea_uid = uid(stoparea_id)
+        self.stop_cities[stoparea_uid].add(city_name)
+
+    @if_object_is_used
+    def add_stop(self, stoparea_id, st):
+        """Add stoparea to the cache of each city the stoparea is in."""
+        stoparea_uid = uid(stoparea_id)
+        for city_name in self.stop_cities[stoparea_uid]:
+            self.cache[city_name]['stops'][stoparea_id] = st
+
+    @if_object_is_used
+    def add_transfer(self, stoparea1_uid, stoparea2_uid, transfer_time):
+        """If a transfer is inside a good city, add it to the city's cache."""
+        for city_name in (self.good_city_names &
+                          self.stop_cities[stoparea1_uid] &
+                          self.stop_cities[stoparea2_uid]):
+            self.cache[city_name]['transfers'].append(
+                (stoparea1_uid, stoparea2_uid, transfer_time)
+            )
+
+    @if_object_is_used
+    def save(self):
+        try:
+            with open(self.cache_path, 'w', encoding='utf-8') as f:
+                json.dump(self.cache, f, ensure_ascii=False)
+        except Exception as e:
+            logging.warning("Failed to save cache: %s", str(e))
+
+
+def process(cities, transfers, cache_path):
+    """cities - list of City instances;
+    transfers - list of sets of StopArea.id;
+    cache_path - path to json-file with good cities cache or None.
+    """
 
     def format_colour(c):
         return c[1:] if c else None
@@ -42,23 +184,19 @@ def process(cities, transfers, cache_name):
                 exits.append(n)
         return exits
 
-    cache = {}
-    if cache_name:
-        with open(cache_name, 'r', encoding='utf-8') as f:
-            cache = json.load(f)
 
-    stops = {}  # el_id -> station data
+    cache = MapsmeCache(cache_path, cities)
+
+    stop_areas = {}  # stoparea el_id -> StopArea instance
+    stops = {}  # stoparea el_id -> stop jsonified data
     networks = []
-
-    good_cities = set([c.name for c in cities])
-    for city_name, data in cache.items():
-        if city_name in good_cities:
-            continue
-        # TODO: get a network, stops and transfers from cache
-
+    good_cities = [c for c in cities if c.is_good()]
     platform_nodes = {}
-    for city in cities:
+    cache.provide_stops_and_networks(stops, networks)
+
+    for city in good_cities:
         network = {'network': city.name, 'routes': [], 'agency_id': city.id}
+        cache.initialize_good_city(city.name, network)
         for route in city:
             routes = {
                 'type': route.mode,
@@ -74,8 +212,9 @@ def process(cities, transfers, cache_name):
             for i, variant in enumerate(route):
                 itin = []
                 for stop in variant:
-                    stops[stop.stoparea.id] = stop.stoparea
-                    itin.append([uid(stop.stoparea.id), round(stop.distance*3.6/SPEED_ON_LINE)])
+                    stop_areas[stop.stoparea.id] = stop.stoparea
+                    cache.link_stop_with_city(stop.stoparea.id, city.name)
+                    itin.append([uid(stop.stoparea.id), round(stop.distance/SPEED_ON_LINE)])
                     # Make exits from platform nodes, if we don't have proper exits
                     if len(stop.stoparea.entrances) + len(stop.stoparea.exits) == 0:
                         for pl in stop.stoparea.platforms:
@@ -105,8 +244,7 @@ def process(cities, transfers, cache_name):
             network['routes'].append(routes)
         networks.append(network)
 
-    m_stops = []
-    for stop in stops.values():
+    for stop_id, stop in stop_areas.items():
         st = {
             'name': stop.name,
             'int_name': stop.int_name,
@@ -127,7 +265,7 @@ def process(cities, transfers, cache_name):
                         'lon': stop.centers[e][0],
                         'lat': stop.centers[e][1],
                         'distance': ENTRANCE_PENALTY + round(distance(
-                            stop.centers[e], stop.center)*3.6/SPEED_TO_ENTRANCE)
+                            stop.centers[e], stop.center)/SPEED_TO_ENTRANCE)
                     })
         if len(stop.entrances) + len(stop.exits) == 0:
             if stop.platforms:
@@ -140,7 +278,7 @@ def process(cities, transfers, cache_name):
                                 'lon': n['lon'],
                                 'lat': n['lat'],
                                 'distance': ENTRANCE_PENALTY + round(distance(
-                                    (n['lon'], n['lat']), stop.center)*3.6/SPEED_TO_ENTRANCE)
+                                    (n['lon'], n['lat']), stop.center)/SPEED_TO_ENTRANCE)
                             })
             else:
                 for k in ('entrances', 'exits'):
@@ -152,28 +290,37 @@ def process(cities, transfers, cache_name):
                         'distance': 60
                     })
 
-        m_stops.append(st)
+        stops[stop_id] = st
+        cache.add_stop(stop_id, st)
 
-    c_transfers = []
+    pairwise_transfers = {}  # (stoparea1_uid, stoparea2_uid) -> time;  uid1 < uid2
     for t_set in transfers:
         t = list(t_set)
         for t_first in range(len(t) - 1):
             for t_second in range(t_first + 1, len(t)):
-                if t[t_first].id in stops and t[t_second].id in stops:
-                    c_transfers.append([
-                        uid(t[t_first].id),
-                        uid(t[t_second].id),
-                        30 + round(distance(t[t_first].center,
-                                            t[t_second].center)*3.6/SPEED_ON_TRANSFER)
-                    ])
+                stoparea1 = t[t_first]
+                stoparea2 = t[t_second]
+                if stoparea1.id in stops and stoparea2.id in stops:
+                    uid1 = uid(stoparea1.id)
+                    uid2 = uid(stoparea2.id)
+                    uid1, uid2 = sorted([uid1, uid2])
+                    transfer_time = (TRANSFER_PENALTY
+                                     + round(distance(stoparea1.center,
+                                                      stoparea2.center)
+                                                      / SPEED_ON_TRANSFER))
+                    pairwise_transfers[(uid1, uid2)] = transfer_time
+                    cache.add_transfer(uid1, uid2, transfer_time)
 
-    if cache_name:
-        with open(cache_name, 'w', encoding='utf-8') as f:
-            json.dump(cache, f)
+    cache.provide_transfers(pairwise_transfers)
+    cache.save()
+
+    pairwise_transfers = [(stop1_uid, stop2_uid, transfer_time)
+                            for (stop1_uid, stop2_uid), transfer_time
+                            in pairwise_transfers.items()]
 
     result = {
-        'stops': m_stops,
-        'transfers': c_transfers,
+        'stops': list(stops.values()),
+        'transfers': pairwise_transfers,
         'networks': networks
     }
     return result

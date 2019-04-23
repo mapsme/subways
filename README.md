@@ -8,8 +8,9 @@ of metro maps.
 ## How To Validate
 
 * Download or update a planet file in o5m format (using `osmconvert` and `osmupdate`).
-* Use `filter_all_subways.sh` to extract a portion of data for all subways.
-* Run `mapsme_subways.py -x filtered_data.osm` to build metro structures and receive a validation log.
+* Use `osmfilter` to extract a portion of data for all subways.
+* Run `process_subways.py` with appropriate set of command line arguments
+  to build metro structures and receive a validation log.
 * Run `validation_to_html.py` on that log to create readable HTML tables.
 
 ## Validation Script
@@ -37,7 +38,7 @@ This can be simplified by using the `build_city.sh` script, which fetches the bb
 
     scripts/build_city.sh london.o5m London
 
-If you are okay with rare updates, use [this website](http://osmz.ru/subways/).
+Daily updates of validation results are available at [this website](http://osm-subway.maps.me).
 
 ## Adding Stop Areas To OSM
 

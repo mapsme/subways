@@ -16,6 +16,10 @@ from subway_structure import (
     find_transfers,
     get_unused_entrances_geojson,
 )
+from subway_io import (
+    read_recovery_data,
+    write_recovery_data
+)
 
 
 def overpass_request(bboxes=None):
@@ -300,6 +304,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', type=argparse.FileType('w', encoding='utf-8'),
                         help='Processed metro systems output')
     parser.add_argument('--cache', help='Cache file name for processed data')
+    parser.add_argument('--recovery-path', help='Cache file name for error recovery')
     parser.add_argument('-d', '--dump', help='Make a YAML file for a city data')
     parser.add_argument('-j', '--json', help='Make a GeoJSON file for a city data')
     parser.add_argument('--crude', action='store_true',
@@ -320,6 +325,14 @@ if __name__ == '__main__':
     if not cities:
         logging.error('No cities to process')
         sys.exit(2)
+
+    # augment cities with recovery data
+    recovery_data = None
+    if options.recovery_path:
+        recovery_data = read_recovery_data(options.recovery_path)
+        for city in cities:
+            city.recovery_data = recovery_data.get(city.name, None)
+
     logging.info('Read %s metro networks', len(cities))
 
     # Reading cached json, loading XML or querying Overpass API
@@ -370,6 +383,9 @@ if __name__ == '__main__':
 
     logging.info('%s good cities: %s', len(good_cities), ', '.join([c.name for c in good_cities]))
 
+    if options.recovery_path:
+        write_recovery_data(options.recovery_path, recovery_data, cities)
+
     if options.entrances:
         json.dump(get_unused_entrances_geojson(osm), options.entrances)
 
@@ -403,7 +419,7 @@ if __name__ == '__main__':
             v = c.get_validation_result()
             v['slug'] = slugify(c.name)
             res.append(v)
-        json.dump(res, options.log)
+        json.dump(res, options.log, indent=2, ensure_ascii=False)
 
     if options.output:
         json.dump(processor.process(cities, transfers, options.cache),

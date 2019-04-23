@@ -6,13 +6,16 @@ import urllib.request
 from css_colours import normalize_colour
 from collections import Counter, defaultdict
 
-
-SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
+#test
+SPREADSHEET_ID = '1pEmmocGYugSqzJ8-ihdE3PnnZ101UjifGPszijMo_pY'
+#work
+#SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
 MAX_DISTANCE_TO_ENTRANCES = 300  # in meters
 MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count
 ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
-MIN_ANGLE_BETWEEN_STOPS = 45  # in degrees
+ALLOWED_ANGLE_BETWEEN_STOPS = 45  # in degrees
+DISALLOWED_ANGLE_BETWEEN_STOPS = 20  # in degrees
 
 DEFAULT_MODES = set(('subway', 'light_rail'))
 DEFAULT_MODES_OVERGROUND = set(('tram',))  # TODO: bus and trolleybus?
@@ -70,11 +73,17 @@ def project_on_line(p, line):
         d2 = dp[0]*dp[0] + dp[1]*dp[1]
         if d2 < 1e-14:
             return None
+        # u is the position of projection of p point on line p1p2
+        # regarding point p1 and (p2-p1) direction vector
         u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
-        res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
+        res = (p1[0] + u * dp[0], p1[1] + u * dp[1])
         if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
             return None
         return res
+        """if not 0 <= u <= 1:
+            return None
+        return (p1[0] + u*dp[0], p1[1] + u*dp[1])
+        """
 
     result = NOWHERE_STOP
     if len(line) < 2:
@@ -534,7 +543,7 @@ class Route:
                       if i == 0 or last_track[i-1] != last_track[i]]
         return last_track, line_nodes
 
-    def project_stops_on_line(self, city):
+    def project_stops_on_line(self):
         projected = [project_on_line(x.stop, self.tracks) for x in self.stops]
         start = 0
         while start < len(self.stops) and distance(
@@ -552,14 +561,14 @@ class Route:
             elif i > end:
                 tracks_end.append(self.stops[i].stop)
             elif projected[i] == NOWHERE_STOP:
-                city.error('Stop "{}" {} is nowhere near the tracks'.format(
+                self.city.error('Stop "{}" {} is nowhere near the tracks'.format(
                     self.stops[i].stoparea.name, self.stops[i].stop), self.element)
             else:
                 # We've got two separate stations with a good stretch of
                 # railway tracks between them. Put these on tracks.
                 d = round(distance(self.stops[i].stop, projected[i]))
                 if d > MAX_DISTANCE_STOP_TO_LINE:
-                    city.warn('Stop "{}" {} is {} meters from the tracks'.format(
+                    self.city.warn('Stop "{}" {} is {} meters from the tracks'.format(
                         self.stops[i].stoparea.name, self.stops[i].stop, d), self.element)
                 else:
                     self.stops[i].stop = projected[i]
@@ -586,6 +595,7 @@ class Route:
         if not Route.is_route(relation, city.modes):
             raise Exception('The relation does not seem a route: {}'.format(relation))
         master_tags = {} if not master else master['tags']
+        self.city = city
         self.element = relation
         self.id = el_id(relation)
         if 'ref' not in relation['tags'] and 'ref' not in master_tags:
@@ -684,7 +694,7 @@ class Route:
 
                     if check_stop_positions and StopArea.is_stop(el):
                         if k not in line_nodes:
-                            city.error('Stop position "{}" ({}) is not on tracks'.format(
+                            city.warn('Stop position "{}" ({}) is not on tracks'.format(
                                 el['tags'].get('name', ''), k), relation)
                     continue
 
@@ -716,15 +726,8 @@ class Route:
             city.error('Route has only one stop', relation)
         else:
             self.is_circular = self.stops[0].stoparea == self.stops[-1].stoparea
-            self.project_stops_on_line(city)
-            for si in range(len(self.stops)-2):
-                angle = angle_between(self.stops[si].stop,
-                                      self.stops[si+1].stop,
-                                      self.stops[si+2].stop)
-                if angle < MIN_ANGLE_BETWEEN_STOPS:
-                    msg = 'Angle between stops around "{}" is too narrow, {} degrees'.format(
-                        self.stops[si+1].stoparea.name, angle)
-                    city.error_if(angle < 20, msg, relation)
+            self.project_stops_on_line()
+            self.check_and_recover_stops_order()
             proj1 = find_segment(self.stops[1].stop, self.tracks)
             proj2 = find_segment(self.stops[min(len(self.stops)-1, 3)].stop, self.tracks)
             if proj1[0] and proj2[0] and (proj1[0] > proj2[0] or
@@ -732,6 +735,86 @@ class Route:
                 city.warn('Tracks seem to go in the opposite direction to stops', relation)
                 self.tracks.reverse()
             self.calculate_distances()
+
+    def check_stops_order(self):
+        disorder_warnings = []
+        disorder_errors = []
+        for si in range(len(self.stops) - 2):
+            angle = angle_between(self.stops[si].stop,
+                                  self.stops[si + 1].stop,
+                                  self.stops[si + 2].stop)
+            if angle < ALLOWED_ANGLE_BETWEEN_STOPS:
+                msg = 'Angle between stops around "{}" is too narrow, {} degrees'.format(
+                    self.stops[si + 1].stoparea.name, angle)
+                if angle < DISALLOWED_ANGLE_BETWEEN_STOPS:
+                    disorder_errors.append(msg)
+                else:
+                    disorder_warnings.append(msg)
+        return disorder_warnings, disorder_errors
+
+    def check_and_recover_stops_order(self):
+        disorder_warnings, disorder_errors = self.check_stops_order()
+        if disorder_warnings or disorder_errors:
+            resort_success = False
+            if self.city.recovery_data:
+                resort_success = self.try_resort_stops()
+                if resort_success:
+                    for msg in disorder_warnings:
+                        self.city.warn(msg, self.element)
+                    for msg in disorder_errors:
+                        self.city.warn("Fixed with recovery data: " + msg, self.element)
+
+            if not resort_success:
+                for msg in disorder_warnings:
+                    self.city.warn(msg, self.element)
+                for msg in disorder_errors:
+                    self.city.error(msg, self.element)
+
+    def try_resort_stops(self):
+        """Precondition: self.city.recovery_data is not None"""
+        self_stops = {} # station name => RouteStop
+        for stop in self.stops:
+            stop_name = stop.stoparea.station.name
+            # We won't programmatically recover routes with repeating stations:
+            # the end doesn't justify the means
+            if stop_name in self_stops:
+                return False
+            self_stops[stop_name] = stop
+
+        route_id = (self.colour, self.ref)
+        if route_id not in self.city.recovery_data:
+            return False
+
+        stop_names = list(self_stops.keys())
+
+        suitable_itineraries = []
+        for itinerary in self.city.recovery_data[route_id]:
+            itinerary_stop_names = [stop['name'] for stop in itinerary['stops']]
+            if (len(stop_names) == len(itinerary_stop_names) and
+                sorted(stop_names) == sorted(itinerary_stop_names)
+            ):
+                suitable_itineraries.append(itinerary)
+
+        if len(suitable_itineraries) == 0:
+            return False
+        elif len(suitable_itineraries) == 1:
+            matching_itinerary = suitable_itineraries[0]
+        else:
+            from_tag = self.element['tags'].get('from')
+            to_tag = self.element['tags'].get('to')
+            if not from_tag and not to_tag:
+                return False
+            matching_itineraries = [
+                itin for itin in suitable_itineraries
+                    if from_tag and itin['from'] == from_tag or
+                       to_tag and itin['to'] == to_tag
+            ]
+            if len(matching_itineraries) != 1:
+                return False
+            matching_itinerary = matching_itineraries[0]
+        self.stops = [self_stops[stop['name']] for stop in matching_itinerary['stops']]
+        print("Recovered order!")
+        return True
 
     def __len__(self):
         return len(self.stops)

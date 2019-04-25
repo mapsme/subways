@@ -279,7 +279,7 @@ def write_recovery_data(path, current_data, cities):
             route_id = (route.colour, route.ref)
             itineraries = []
             for variant in route:
-                itin = {'stops': [],
+                itin = {'stations': [],
                         'name': variant.name,
                         'from': variant.element['tags'].get('from'),
                         'to': variant.element['tags'].get('to')}
@@ -288,7 +288,7 @@ def write_recovery_data(path, current_data, cities):
                     station_name = station.name
                     if station_name == '?' and station.int_name:
                         station_name = station.int_name
-                    itin['stops'].append({
+                    itin['stations'].append({
                         'oms_id': station.id,
                         'name': station_name,
                         'center': station.center
@@ -312,5 +312,5 @@ def write_recovery_data(path, current_data, cities):
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logging.warning("Cannot write recovery data '%s': %s", path, str(e))
+        logging.warning("Cannot write recovery data to '%s': %s", path, str(e))
 

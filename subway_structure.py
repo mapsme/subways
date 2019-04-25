@@ -17,6 +17,10 @@ ALLOWED_TRANSFERS_MISMATCH = 0.07  # part of total interchanges count
 ALLOWED_ANGLE_BETWEEN_STOPS = 45  # in degrees
 DISALLOWED_ANGLE_BETWEEN_STOPS = 20  # in degrees
 
+# If an object was moved not too far compared to previous script run,
+# it is likely the same object
+DISPLACEMENT_TOLERANCE = 300  # in meters
+
 DEFAULT_MODES = set(('subway', 'light_rail'))
 DEFAULT_MODES_OVERGROUND = set(('tram',))  # TODO: bus and trolleybus?
 ALL_MODES = set(('subway', 'light_rail', 'monorail', 'train', 'tram',
@@ -790,13 +794,21 @@ class Route:
             return False
 
         stop_names = list(self_stops.keys())
-
         suitable_itineraries = []
         for itinerary in self.city.recovery_data[route_id]:
-            itinerary_stop_names = [stop['name'] for stop in itinerary['stops']]
-            if (len(stop_names) == len(itinerary_stop_names) and
-                sorted(stop_names) == sorted(itinerary_stop_names)
-            ):
+            itinerary_stop_names = [stop['name'] for stop in itinerary['stations']]
+            if not (len(stop_names) == len(itinerary_stop_names) and
+                    sorted(stop_names) == sorted(itinerary_stop_names)):
+                continue
+            big_station_displacement = False
+            for it_stop in itinerary['stations']:
+                name = it_stop['name']
+                it_stop_center = it_stop['center']
+                self_stop_center = self_stops[name].stoparea.station.center
+                if distance(it_stop_center, self_stop_center) > DISPLACEMENT_TOLERANCE:
+                    big_station_displacement = True
+                    break
+            if not big_station_displacement:
                 suitable_itineraries.append(itinerary)
 
         if len(suitable_itineraries) == 0:
@@ -816,7 +828,7 @@ class Route:
             if len(matching_itineraries) != 1:
                 return False
             matching_itinerary = matching_itineraries[0]
-        self.stops = [self_stops[stop['name']] for stop in matching_itinerary['stops']]
+        self.stops = [self_stops[stop['name']] for stop in matching_itinerary['stations']]
         return True
 
     def __len__(self):

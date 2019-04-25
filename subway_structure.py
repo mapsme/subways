@@ -771,12 +771,16 @@ class Route:
                     self.city.error(msg, self.element)
 
     def try_resort_stops(self):
-        """Precondition: self.city.recovery_data is not None"""
+        """Precondition: self.city.recovery_data is not None.
+        Return success of station order recovering."""
         self_stops = {} # station name => RouteStop
         for stop in self.stops:
-            stop_name = stop.stoparea.station.name
+            station = stop.stoparea.station
+            stop_name = station.name
+            if stop_name == '?' and station.int_name:
+                stop_name = station.int_name
             # We won't programmatically recover routes with repeating stations:
-            # the end doesn't justify the means
+            # such cases are rare and deserves manual verification
             if stop_name in self_stops:
                 return False
             self_stops[stop_name] = stop
@@ -813,7 +817,6 @@ class Route:
                 return False
             matching_itinerary = matching_itineraries[0]
         self.stops = [self_stops[stop['name']] for stop in matching_itinerary['stops']]
-        print("Recovered order!")
         return True
 
     def __len__(self):
@@ -987,6 +990,7 @@ class City:
         self.stops_and_platforms = set()  # Set of stops and platforms el_id
         self.errors = []
         self.warnings = []
+        self.recovery_data = None
 
     def log_message(self, message, el):
         if el:

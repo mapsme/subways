@@ -9,7 +9,6 @@ import time
 import urllib.parse
 import urllib.request
 from processors import processor
-from collections import OrderedDict
 
 from subway_structure import (
     download_cities,
@@ -17,8 +16,11 @@ from subway_structure import (
     get_unused_entrances_geojson,
 )
 from subway_io import (
+    dump_yaml,
+    load_xml,
+    make_geojson,
     read_recovery_data,
-    write_recovery_data
+    write_recovery_data,
 )
 
 
@@ -55,230 +57,6 @@ def multi_overpass(bboxes):
             time.sleep(5)
         result.append(overpass_request(bboxes[i:i+SLICE_SIZE]))
     return result
-
-
-def load_xml(f):
-    try:
-        from lxml import etree
-    except ImportError:
-        import xml.etree.ElementTree as etree
-
-    elements = []
-    nodes = {}
-    for event, element in etree.iterparse(f):
-        if element.tag in ('node', 'way', 'relation'):
-            el = {'type': element.tag, 'id': int(element.get('id'))}
-            if element.tag == 'node':
-                for n in ('lat', 'lon'):
-                    el[n] = float(element.get(n))
-                nodes[el['id']] = (el['lat'], el['lon'])
-            tags = {}
-            nd = []
-            members = []
-            for sub in element:
-                if sub.tag == 'tag':
-                    tags[sub.get('k')] = sub.get('v')
-                elif sub.tag == 'nd':
-                    nd.append(int(sub.get('ref')))
-                elif sub.tag == 'member':
-                    members.append({'type': sub.get('type'),
-                                    'ref': int(sub.get('ref')),
-                                    'role': sub.get('role', '')})
-            if tags:
-                el['tags'] = tags
-            if nd:
-                el['nodes'] = nd
-            if members:
-                el['members'] = members
-            elements.append(el)
-            element.clear()
-
-    # Now make centers, assuming relations go after ways
-    ways = {}
-    relations = {}
-    for el in elements:
-        if el['type'] == 'way' and 'nodes' in el:
-            center = [0, 0]
-            count = 0
-            for nd in el['nodes']:
-                if nd in nodes:
-                    center[0] += nodes[nd][0]
-                    center[1] += nodes[nd][1]
-                    count += 1
-            if count > 0:
-                el['center'] = {'lat': center[0]/count, 'lon': center[1]/count}
-                ways[el['id']] = (el['center']['lat'], el['center']['lon'])
-        elif el['type'] == 'relation' and 'members' in el:
-            center = [0, 0]
-            count = 0
-            for m in el['members']:
-                if m['type'] == 'node' and m['ref'] in nodes:
-                    center[0] += nodes[m['ref']][0]
-                    center[1] += nodes[m['ref']][1]
-                    count += 1
-                elif m['type'] == 'way' and m['ref'] in ways:
-                    center[0] += ways[m['ref']][0]
-                    center[1] += ways[m['ref']][1]
-                    count += 1
-            if count > 0:
-                el['center'] = {'lat': center[0]/count, 'lon': center[1]/count}
-                relations[el['id']] = (el['center']['lat'], el['center']['lon'])
-
-    # Iterating again, now filling relations that contain only relations
-    for el in elements:
-        if el['type'] == 'relation' and 'members' in el:
-            center = [0, 0]
-            count = 0
-            for m in el['members']:
-                if m['type'] == 'node' and m['ref'] in nodes:
-                    center[0] += nodes[m['ref']][0]
-                    center[1] += nodes[m['ref']][1]
-                    count += 1
-                elif m['type'] == 'way' and m['ref'] in ways:
-                    center[0] += ways[m['ref']][0]
-                    center[1] += ways[m['ref']][1]
-                    count += 1
-                elif m['type'] == 'relation' and m['ref'] in relations:
-                    center[0] += relations[m['ref']][0]
-                    center[1] += relations[m['ref']][1]
-                    count += 1
-            if count > 0:
-                el['center'] = {'lat': center[0]/count, 'lon': center[1]/count}
-                relations[el['id']] = (el['center']['lat'], el['center']['lon'])
-    return elements
-
-
-def dump_data(city, f):
-    def write_yaml(data, f, indent=''):
-        if isinstance(data, (set, list)):
-            f.write('\n')
-            for i in data:
-                f.write(indent)
-                f.write('- ')
-                write_yaml(i, f, indent + '  ')
-        elif isinstance(data, dict):
-            f.write('\n')
-            for k, v in data.items():
-                if v is None:
-                    continue
-                f.write(indent + str(k) + ': ')
-                write_yaml(v, f, indent + '  ')
-                if isinstance(v, (list, set, dict)):
-                    f.write('\n')
-        else:
-            f.write(str(data))
-            f.write('\n')
-
-    INCLUDE_STOP_AREAS = False
-    stops = set()
-    routes = []
-    for route in city:
-        stations = OrderedDict([(sa.transfer or sa.id, sa.name) for sa in route.stop_areas()])
-        rte = {
-            'type': route.mode,
-            'ref': route.ref,
-            'name': route.name,
-            'colour': route.colour,
-            'infill': route.infill,
-            'station_count': len(stations),
-            'stations': list(stations.values()),
-            'itineraries': {}
-        }
-        for variant in route:
-            if INCLUDE_STOP_AREAS:
-                v_stops = []
-                for st in variant:
-                    s = st.stoparea
-                    if s.id == s.station.id:
-                        v_stops.append('{} ({})'.format(s.station.name, s.station.id))
-                    else:
-                        v_stops.append('{} ({}) in {} ({})'.format(s.station.name, s.station.id,
-                                                                   s.name, s.id))
-            else:
-                v_stops = ['{} ({})'.format(
-                    s.stoparea.station.name,
-                    s.stoparea.station.id) for s in variant]
-            rte['itineraries'][variant.id] = v_stops
-            stops.update(v_stops)
-        routes.append(rte)
-    transfers = []
-    for t in city.transfers:
-        v_stops = ['{} ({})'.format(s.name, s.id) for s in t]
-        transfers.append(v_stops)
-
-    result = {
-        'stations': sorted(stops),
-        'transfers': sorted(transfers, key=lambda t: t[0]),
-        'routes': sorted(routes, key=lambda r: r['ref']),
-    }
-    write_yaml(result, f)
-
-
-def make_geojson(city, tracks=True):
-    transfers = set()
-    for t in city.transfers:
-        transfers.update(t)
-    features = []
-    stopareas = set()
-    stops = set()
-    for rmaster in city:
-        for variant in rmaster:
-            if not tracks:
-                features.append({
-                    'type': 'Feature',
-                    'geometry': {
-                        'type': 'LineString',
-                        'coordinates': [s.stop for s in variant],
-                    },
-                    'properties': {
-                        'ref': variant.ref,
-                        'name': variant.name,
-                        'stroke': variant.colour
-                    }
-                })
-            elif variant.tracks:
-                features.append({
-                    'type': 'Feature',
-                    'geometry': {
-                        'type': 'LineString',
-                        'coordinates': variant.tracks,
-                    },
-                    'properties': {
-                        'ref': variant.ref,
-                        'name': variant.name,
-                        'stroke': variant.colour
-                    }
-                })
-            for st in variant:
-                stops.add(st.stop)
-                stopareas.add(st.stoparea)
-
-    for stop in stops:
-        features.append({
-            'type': 'Feature',
-            'geometry': {
-                'type': 'Point',
-                'coordinates': stop,
-            },
-            'properties': {
-                'marker-size': 'small',
-                'marker-symbol': 'circle'
-            }
-        })
-    for stoparea in stopareas:
-        features.append({
-            'type': 'Feature',
-            'geometry': {
-                'type': 'Point',
-                'coordinates': stoparea.center,
-            },
-            'properties': {
-                'name': stoparea.name,
-                'marker-size': 'small',
-                'marker-color': '#ff2600' if stoparea in transfers else '#797979'
-            }
-        })
-    return {'type': 'FeatureCollection', 'features': features}
 
 
 def slugify(name):
@@ -381,7 +159,8 @@ if __name__ == '__main__':
     logging.info('Finding transfer stations')
     transfers = find_transfers(osm, cities)
 
-    logging.info('%s good cities: %s', len(good_cities), ', '.join([c.name for c in good_cities]))
+    logging.info('%s good cities: %s', len(good_cities),
+                 ', '.join(sorted([c.name for c in good_cities])))
 
     if options.recovery_path:
         write_recovery_data(options.recovery_path, recovery_data, cities)
@@ -394,10 +173,10 @@ if __name__ == '__main__':
             for c in cities:
                 with open(os.path.join(options.dump, slugify(c.name) + '.yaml'),
                           'w', encoding='utf-8') as f:
-                    dump_data(c, f)
+                    dump_yaml(c, f)
         elif len(cities) == 1:
             with open(options.dump, 'w', encoding='utf-8') as f:
-                dump_data(cities[0], f)
+                dump_yaml(cities[0], f)
         else:
             logging.error('Cannot dump %s cities at once', len(cities))
 

@@ -82,9 +82,9 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', type=argparse.FileType('w', encoding='utf-8'),
                         help='Processed metro systems output')
     parser.add_argument('--cache', help='Cache file name for processed data')
-    parser.add_argument('--recovery-path', help='Cache file name for error recovery')
+    parser.add_argument('-r', '--recovery-path', help='Cache file name for error recovery')
     parser.add_argument('-d', '--dump', help='Make a YAML file for a city data')
-    parser.add_argument('-j', '--json', help='Make a GeoJSON file for a city data')
+    parser.add_argument('-j', '--geojson', help='Make a GeoJSON file for a city data')
     parser.add_argument('--crude', action='store_true',
                         help='Do not use OSM railway geometry for GeoJSON')
     options = parser.parse_args()
@@ -180,17 +180,17 @@ if __name__ == '__main__':
         else:
             logging.error('Cannot dump %s cities at once', len(cities))
 
-    if options.json:
-        if os.path.isdir(options.json):
+    if options.geojson:
+        if os.path.isdir(options.geojson):
             for c in cities:
-                with open(os.path.join(options.dump, slugify(c.name) + '.geojson'),
+                with open(os.path.join(options.geojson, slugify(c.name) + '.geojson'),
                           'w', encoding='utf-8') as f:
                     json.dump(make_geojson(c, not options.crude), f)
         elif len(cities) == 1:
-            with open(options.json, 'w', encoding='utf-8') as f:
+            with open(options.geojson, 'w', encoding='utf-8') as f:
                 json.dump(make_geojson(cities[0], not options.crude), f)
         else:
-            logging.error('Cannot make a json of %s cities at once', len(cities))
+            logging.error('Cannot make a geojson of %s cities at once', len(cities))
 
     if options.log:
         res = []

@@ -6,10 +6,8 @@ import urllib.request
 from css_colours import normalize_colour
 from collections import Counter, defaultdict
 
-#test
-SPREADSHEET_ID = '1pEmmocGYugSqzJ8-ihdE3PnnZ101UjifGPszijMo_pY'
-#work
-#SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
+
+SPREADSHEET_ID = '1-UHDzfBwHdeyFxgC5cE_MaNQotF3-Y0r1nW9IwpIEj8'
 MAX_DISTANCE_TO_ENTRANCES = 300  # in meters
 MAX_DISTANCE_STOP_TO_LINE = 50  # in meters
 ALLOWED_STATIONS_MISMATCH = 0.02   # part of total station count

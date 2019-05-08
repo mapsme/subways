@@ -9,12 +9,6 @@ import time
 import urllib.parse
 import urllib.request
 from processors import processor
-
-from subway_structure import (
-    download_cities,
-    find_transfers,
-    get_unused_entrances_geojson,
-)
 from subway_io import (
     dump_yaml,
     load_xml,
@@ -22,7 +16,11 @@ from subway_io import (
     read_recovery_data,
     write_recovery_data,
 )
-
+from subway_structure import (
+    download_cities,
+    find_transfers,
+    get_unused_entrances_geojson,
+)
 
 def overpass_request(bboxes=None):
     query = '[out:json][timeout:1000];('
@@ -104,7 +102,7 @@ if __name__ == '__main__':
         logging.error('No cities to process')
         sys.exit(2)
 
-    # augment cities with recovery data
+    # Augment cities with recovery data
     recovery_data = None
     if options.recovery_path:
         recovery_data = read_recovery_data(options.recovery_path)

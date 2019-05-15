@@ -33,6 +33,12 @@ th {
   color: #888;
   opacity: 0.5;
 }
+table {
+    max-width: 900px;
+}
+tr:hover td:nth-child(n+2) {
+    background: lightblue;
+}
 </style>
 '''
 

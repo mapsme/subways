@@ -78,11 +78,12 @@ def project_on_line(p, line):
         # u is the position of projection of p point on line p1p2
         # regarding point p1 and (p2-p1) direction vector
         u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
-        res = (p1[0] + u * dp[0], p1[1] + u * dp[1])
+        res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
         if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
             return None
         return res
-        """if not 0 <= u <= 1:
+        """ # TODO: test this condition and use it instead of current approach.
+        if not 0 <= u <= 1:
             return None
         return (p1[0] + u*dp[0], p1[1] + u*dp[1])
         """

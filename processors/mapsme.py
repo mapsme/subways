@@ -2,7 +2,10 @@ import json
 import os
 import logging
 from collections import defaultdict
-from subway_structure import distance, el_center, Station
+from subway_structure import (
+    distance, el_center, Station,
+    DISPLACEMENT_TOLERANCE
+)
 
 
 OSM_TYPES = {'n': (0, 'node'), 'w': (2, 'way'), 'r': (3, 'relation')}
@@ -13,7 +16,6 @@ SPEED_TO_ENTRANCE = 5 * KMPH_TO_MPS  # m/s
 SPEED_ON_TRANSFER = 3.5 * KMPH_TO_MPS  # m/s
 SPEED_ON_LINE = 40 * KMPH_TO_MPS  # m/s
 DEFAULT_INTERVAL = 2.5  # minutes
-DISPLACEMENT_TOLERANCE = 300  # meters
 
 
 def uid(elid, typ=None):

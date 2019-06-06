@@ -82,7 +82,7 @@ def tmpl(s, data=None, **kwargs):
 
 EXPAND_OSM_TYPE = {'n': 'node', 'w': 'way', 'r': 'relation'}
 RE_SHORT = re.compile(r'([nwr])(\d+)')
-RE_FULL = re.compile(r'(node|way|relation) (\d+)')
+RE_FULL = re.compile(r'\b(node|way|relation) (\d+)')
 RE_COORDS = re.compile(r'\((-?\d+\.\d+), (-?\d+\.\d+)\)')
 
 
@@ -108,7 +108,7 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 with open(sys.argv[1], 'r') as f:
-    data = {c['name']: CityData(c) for c in json.load(f)}
+    data = {c['name']: CityData(c) for c in json.load(f, encoding='utf-8')}
 
 countries = {}
 continents = {}

@@ -19,10 +19,11 @@ DISALLOWED_ANGLE_BETWEEN_STOPS = 20  # in degrees
 # it is likely the same object
 DISPLACEMENT_TOLERANCE = 300  # in meters
 
-DEFAULT_MODES = set(('subway', 'light_rail'))
+MODES_RAPID = set(('subway', 'light_rail', 'monorail', 'train'))
+MODES_OVERGROUND = set(('tram', 'bus', 'trolleybus', 'aerialway', 'ferry'))
+DEFAULT_MODES_RAPID = set(('subway', 'light_rail'))
 DEFAULT_MODES_OVERGROUND = set(('tram',))  # TODO: bus and trolleybus?
-ALL_MODES = set(('subway', 'light_rail', 'monorail', 'train', 'tram',
-                 'bus', 'trolleybus', 'aerialway', 'ferry'))
+ALL_MODES = MODES_RAPID | MODES_OVERGROUND
 RAILWAY_TYPES = set(('rail', 'light_rail', 'subway', 'narrow_gauge',
                      'funicular', 'monorail', 'tram'))
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
@@ -197,7 +198,7 @@ class Station:
         return set(modes)
 
     @staticmethod
-    def is_station(el, modes=DEFAULT_MODES):
+    def is_station(el, modes):
         # public_transport=station is too ambigous and unspecific to use,
         # so we expect for it to be backed by railway=station.
         if 'tram' in modes and el.get('tags', {}).get('railway') == 'tram_stop':
@@ -384,7 +385,7 @@ class RouteStop:
         self.seen_station = False
 
     @staticmethod
-    def get_member_type(el, role, modes=DEFAULT_MODES):
+    def get_member_type(el, role, modes):
         if StopArea.is_stop(el):
             return 'stop'
         elif StopArea.is_platform(el):
@@ -457,7 +458,7 @@ class RouteStop:
 class Route:
     """The longest route for a city with a unique ref."""
     @staticmethod
-    def is_route(el, modes=DEFAULT_MODES):
+    def is_route(el, modes):
         if el['type'] != 'relation' or el.get('tags', {}).get('type') != 'route':
             return False
         if 'members' not in el:
@@ -980,7 +981,7 @@ class City:
             if self.overground:
                 self.modes = DEFAULT_MODES_OVERGROUND
             else:
-                self.modes = DEFAULT_MODES
+                self.modes = DEFAULT_MODES_RAPID
         else:
             self.modes = set([x.strip() for x in networks[0].split(',')])
 

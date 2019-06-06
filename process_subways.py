@@ -20,40 +20,44 @@ from subway_structure import (
     download_cities,
     find_transfers,
     get_unused_entrances_geojson,
+    MODES_OVERGROUND,
+    MODES_RAPID,
 )
 
-def overpass_request(bboxes=None):
+
+def overpass_request(overground, overpass_api, bboxes=None):
     query = '[out:json][timeout:1000];('
     if bboxes is None:
         bboxes = [None]
+    modes = MODES_OVERGROUND if overground else MODES_RAPID
     for bbox in bboxes:
-        bbox_part = '' if not bbox else '({})'.format(','.join(bbox))
-        for t, k, v in (('rel', 'route', 'subway'),
-                        ('rel', 'route', 'light_rail'),
-                        ('rel', 'route_master', 'subway'),
-                        ('rel', 'route_master', 'light_rail'),
-                        ('rel', 'public_transport', 'stop_area'),
-                        ('rel', 'public_transport', 'stop_area_group'),
-                        ('node', 'railway', 'subway_entrance')):
-            query += '{}["{}"="{}"]{};'.format(t, k, v, bbox_part)
-    query += ');(._;>);out body center qt;'
+        bbox_part = '' if not bbox else '({})'.format(','.join(str(coord) for coord in bbox))
+        query += '('
+        for mode in modes:
+            query += 'rel[route="{}"]{};'.format(mode, bbox_part)
+        query += ');rel(br)[type=route_master];'
+        if not overground:
+            query += 'node[railway=subway_entrance]{};'.format(bbox_part)
+        query += 'rel[public_transport=stop_area]{};'.format(bbox_part)
+        query += 'rel(br)[type=public_transport][public_transport=stop_area_group];'
+    query += ');(._;>>;);out body center qt;'
     logging.debug('Query: %s', query)
-    url = 'http://overpass-api.de/api/interpreter?data={}'.format(urllib.parse.quote(query))
+    url = '{}?data={}'.format(overpass_api, urllib.parse.quote(query))
     response = urllib.request.urlopen(url, timeout=1000)
     if response.getcode() != 200:
         raise Exception('Failed to query Overpass API: HTTP {}'.format(response.getcode()))
     return json.load(response)['elements']
 
 
-def multi_overpass(bboxes):
+def multi_overpass(overground, overpass_api, bboxes):
     if not bboxes:
-        return overpass_request(None)
+        return overpass_request(overground, overpass_api, None)
     SLICE_SIZE = 10
     result = []
     for i in range(0, len(bboxes) + SLICE_SIZE - 1, SLICE_SIZE):
         if i > 0:
             time.sleep(5)
-        result.append(overpass_request(bboxes[i:i+SLICE_SIZE]))
+        result.extend(overpass_request(overground, overpass_api, bboxes[i:i+SLICE_SIZE]))
     return result
 
 
@@ -66,6 +70,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '-i', '--source', help='File to write backup of OSM data, or to read data from')
     parser.add_argument('-x', '--xml', help='OSM extract with routes, to read data from')
+    parser.add_argument('--overpass-api',
+                        default='http://overpass-api.de/api/interpreter',
+                        help="Overpass API URL")
     parser.add_argument(
         '-b', '--bbox', action='store_true',
         help='Use city boundaries to query Overpass API instead of querying the world')
@@ -134,7 +141,7 @@ if __name__ == '__main__':
         else:
             bboxes = None
         logging.info('Downloading data from Overpass API')
-        osm = multi_overpass(bboxes)
+        osm = multi_overpass(options.overground, options.overpass_api, bboxes)
         if options.source:
             with open(options.source, 'w', encoding='utf-8') as f:
                 json.dump(osm, f)
@@ -196,7 +203,7 @@ if __name__ == '__main__':
             v = c.get_validation_result()
             v['slug'] = slugify(c.name)
             res.append(v)
-        json.dump(res, options.log, indent=2, ensure_ascii=False)
+        json.dump(res, options.log, ensure_ascii=False)
 
     if options.output:
         json.dump(processor.process(cities, transfers, options.cache),

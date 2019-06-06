@@ -7,8 +7,12 @@ of metro maps.
 
 ## How To Validate
 
-* Download or update a planet file in o5m format (using `osmconvert` and `osmupdate`).
-* Use `osmfilter` to extract a portion of data for all subways.
+
+* Choose transport data source:
+  1. Download or update a planet file in o5m format (using `osmconvert` and `osmupdate`).
+     Run `osmfilter` to extract a portion of data for all subways. Or
+  2. If you don't specify `--xml` or `--source` option to the `process_subways.py` script
+     it tries to fetch data over [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API). **Not suitable for whole planet or large countries.**
 * Run `process_subways.py` with appropriate set of command line arguments
   to build metro structures and receive a validation log.
 * Run `validation_to_html.py` on that log to create readable HTML tables.

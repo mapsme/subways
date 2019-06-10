@@ -107,8 +107,8 @@ if len(sys.argv) < 2:
     print('Usage: {} <validation.log> [<target_directory>]'.format(sys.argv[0]))
     sys.exit(1)
 
-with open(sys.argv[1], 'r') as f:
-    data = {c['name']: CityData(c) for c in json.load(f, encoding='utf-8')}
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    data = {c['name']: CityData(c) for c in json.load(f)}
 
 countries = {}
 continents = {}

@@ -81,8 +81,8 @@ def tmpl(s, data=None, **kwargs):
 
 
 EXPAND_OSM_TYPE = {'n': 'node', 'w': 'way', 'r': 'relation'}
-RE_SHORT = re.compile(r'([nwr])(\d+)')
-RE_FULL = re.compile(r'\b(node|way|relation) (\d+)')
+RE_SHORT = re.compile(r'\b([nwr])(\d+)\b')
+RE_FULL = re.compile(r'\b(node|way|relation) (\d+)\b')
 RE_COORDS = re.compile(r'\((-?\d+\.\d+), (-?\d+\.\d+)\)')
 
 

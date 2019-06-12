@@ -203,7 +203,7 @@ if __name__ == '__main__':
             v = c.get_validation_result()
             v['slug'] = slugify(c.name)
             res.append(v)
-        json.dump(res, options.log, ensure_ascii=False)
+        json.dump(res, options.log, indent=2, ensure_ascii=False)
 
     if options.output:
         json.dump(processor.process(cities, transfers, options.cache),

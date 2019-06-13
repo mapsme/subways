@@ -35,7 +35,8 @@ def overpass_request(overground, overpass_api, bboxes=None):
         query += '('
         for mode in modes:
             query += 'rel[route="{}"]{};'.format(mode, bbox_part)
-        query += ');rel(br)[type=route_master];'
+        query += ');'
+        query += 'rel(br)[type=route_master];'
         if not overground:
             query += 'node[railway=subway_entrance]{};'.format(bbox_part)
         query += 'rel[public_transport=stop_area]{};'.format(bbox_part)

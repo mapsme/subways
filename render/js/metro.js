@@ -7,14 +7,14 @@ function slugify(name) {
 
 // Inspired by http://ahalota.github.io/Leaflet.CountrySelect
 L.CitySelect = L.Control.extend({
-	options: {
-		position: 'topright',
-		title: 'City'
-	},
-	onAdd: function(map) {
-		this.div = L.DomUtil.create('div');
-		this.select = L.DomUtil.create('select', 'leaflet-countryselect', this.div);
-		var that = this;
+    options: {
+        position: 'topright',
+        title: 'City'
+    },
+    onAdd: function(map) {
+        this.div = L.DomUtil.create('div');
+        this.select = L.DomUtil.create('select', 'leaflet-countryselect', this.div);
+        var that = this;
 
         var xhr = new XHR({
             method: 'get',
@@ -29,16 +29,16 @@ L.CitySelect = L.Control.extend({
                     
                     var content = '';
 
-		            if (that.options.title.length > 0) {
-			            content += '<option>' + that.options.title + '</option>';
-		            }
+                    if (that.options.title.length > 0) {
+                        content += '<option>' + that.options.title + '</option>';
+                    }
 
-		            for (var i = 0; i < cities.length; ++i){
-		                city_name = cities[i].split(',')[0];
-			            content += '<option value="' + city_name+ '">' + cities[i] + '</option>';
-		            }
-		            
-		            that.select.innerHTML = content;
+                    for (var i = 0; i < cities.length; ++i){
+                        city_name = cities[i].split(',')[0];
+                        content += '<option value="' + city_name+ '">' + cities[i] + '</option>';
+                    }
+                    
+                    that.select.innerHTML = content;
                 }
             },
             error: function (status, responseText, responseXML, statusText) {
@@ -46,27 +46,27 @@ L.CitySelect = L.Control.extend({
             }
         });
 
-		this.select.onmousedown = L.DomEvent.stopPropagation;
-		return this.div;
-	},
-	on: function(type, handler) {
-		if (type == 'change') {
-			this.onChange = handler;
-			L.DomEvent.addListener(this.select, 'change', this._onChange, this);
-		} else {
-			console.log('CitySelect - cannot handle ' + type + ' events.')
-		}
-	},
-	_onChange: function(e) {
-		var selectedCity = this.select.options[this.select.selectedIndex].value;
-		e.cityName = selectedCity;
-		this.onChange(e);
-	}
+        this.select.onmousedown = L.DomEvent.stopPropagation;
+        return this.div;
+    },
+    on: function(type, handler) {
+        if (type == 'change') {
+            this.onChange = handler;
+            L.DomEvent.addListener(this.select, 'change', this._onChange, this);
+        } else {
+            console.log('CitySelect - cannot handle ' + type + ' events.')
+        }
+    },
+    _onChange: function(e) {
+        var selectedCity = this.select.options[this.select.selectedIndex].value;
+        e.cityName = selectedCity;
+        this.onChange(e);
+    }
 });
 
 
 L.citySelect = function(id, options) {
-	return new L.CitySelect(id, options);
+    return new L.CitySelect(id, options);
 };
 
 
@@ -104,12 +104,12 @@ selector.on('change', function(e) {
                 });
 
                 if (map.previousCity != null) {
-					map.removeLayer(map.previousCity);
-				}
-				map.previousCity = newCity;
+                    map.removeLayer(map.previousCity);
+                }
+                map.previousCity = newCity;
 
-				map.addLayer(newCity);
-				map.fitBounds(newCity.getBounds());
+                map.addLayer(newCity);
+                map.fitBounds(newCity.getBounds());
 
             }
 

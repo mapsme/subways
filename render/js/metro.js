@@ -1,3 +1,22 @@
+const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+var osm_layer = L.tileLayer(OSM_URL, {
+    maxZoom: 18,
+    attribution: OSM_ATTRIB,
+    opacity: 0.5
+});
+
+var initialLocation = [55.7510888, 37.7642849];
+
+var map = L.map('map').setView(initialLocation, 15).addLayer(osm_layer);
+
+L.marker(initialLocation)
+.addTo(map)
+.bindPopup('Choose a city from the list at the top-right corner!')
+.openPopup();
+
+
 function slugify(name) {
     name = name.toLowerCase();
     name = name.replace(/ /g, '_');

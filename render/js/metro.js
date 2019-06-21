@@ -32,7 +32,7 @@ var initialLocation = [55.7510888, 37.7642849];
 
 var map = L.map('map').setView(initialLocation, 15).addLayer(osm_layer);
 
-var hint = L.marker(initialLocation)
+var hint = L.marker(initialLocation, {opacity: 0})
  .addTo(map)
  .bindPopup('Choose a city from the list at the top-right corner!')
  .openPopup();
@@ -101,6 +101,11 @@ var selector = L.citySelect({position: 'topright'}).addTo(map);
 selector.on('change', function(e) {
     if (e.cityName === selector.options.title)
         return;
+
+    if (hint !== null) {
+        map.removeLayer(hint);
+        hint = null;
+    }
 
     var cityName = e.cityName;
 

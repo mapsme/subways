@@ -6,7 +6,7 @@ function slugify(name) {
 
 function ajax(url, onSuccess, onError) {
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true); // the third argument is true by default, it means that request will be async
+    xhr.open('GET', url);
     xhr.onload = function(e) {
         var responseText = e.target.responseText;
         if (xhr.status === 200) {

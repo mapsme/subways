@@ -32,9 +32,9 @@ NOWHERE_STOP = (0, 0)  # too far away from any metro system
 used_entrances = set()
 
 
-class StopperException(Exception):
-    """Is thrown if a critical validation error occurs
-    that prevents further validation."""
+class CriticalValidationError(Exception):
+    """Is thrown if an error occurs
+    that prevents further validation of a city."""
 
 
 def el_id(el):
@@ -711,7 +711,7 @@ class Route:
                 if 'stop' in m['role'] or 'platform' in m['role']:
                     city.error('{} {} {} for route relation is not in the dataset'.format(
                         m['role'], m['type'], m['ref']), relation)
-                    raise StopperException(
+                    raise CriticalValidationError(
                         'Stop or platform {} {} in relation {} '
                         'is not in the dataset for {}'.format(
                             m['type'], m['ref'], relation['id'], city.name))

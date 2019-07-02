@@ -17,12 +17,12 @@ from subway_io import (
     write_recovery_data,
 )
 from subway_structure import (
+    CriticalValidationError,
     download_cities,
     find_transfers,
     get_unused_entrances_geojson,
     MODES_OVERGROUND,
     MODES_RAPID,
-    StopperException,
 )
 
 
@@ -160,11 +160,11 @@ if __name__ == '__main__':
     for c in cities:
         try:
             c.extract_routes()
-        except StopperException as e:
+            c.validate()
+            if c.is_good():
+                good_cities.append(c)
+        except CriticalValidationError as e:
             logging.error("Critical validation error: %s", str(e))
-        c.validate()
-        if c.is_good():
-            good_cities.append(c)
 
     logging.info('Finding transfer stations')
     transfers = find_transfers(osm, cities)

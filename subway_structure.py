@@ -959,6 +959,8 @@ class RouteMaster:
 
 class City:
     def __init__(self, row, overground=False):
+        self.errors = []
+        self.warnings = []
         self.name = row[1]
         self.country = row[2]
         self.continent = row[3]
@@ -1006,8 +1008,6 @@ class City:
         self.transfers = []  # List of lists of stop areas
         self.station_ids = set()  # Set of stations' uid
         self.stops_and_platforms = set()  # Set of stops and platforms el_id
-        self.errors = []
-        self.warnings = []
         self.recovery_data = None
 
     def log_message(self, message, el):

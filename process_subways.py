@@ -22,6 +22,7 @@ from subway_structure import (
     get_unused_entrances_geojson,
     MODES_OVERGROUND,
     MODES_RAPID,
+    StopperException,
 )
 
 
@@ -157,7 +158,10 @@ if __name__ == '__main__':
     logging.info('Building routes for each city')
     good_cities = []
     for c in cities:
-        c.extract_routes()
+        try:
+            c.extract_routes()
+        except StopperException as e:
+            logging.error("Critical validation error: %s", str(e))
         c.validate()
         if c.is_good():
             good_cities.append(c)

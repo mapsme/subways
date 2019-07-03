@@ -160,11 +160,12 @@ if __name__ == '__main__':
     for c in cities:
         try:
             c.extract_routes()
+        except CriticalValidationError as e:
+            logging.error("Critical validation error: %s", str(e))
+        else:
             c.validate()
             if c.is_good():
                 good_cities.append(c)
-        except CriticalValidationError as e:
-            logging.error("Critical validation error: %s", str(e))
 
     logging.info('Finding transfer stations')
     transfers = find_transfers(osm, cities)

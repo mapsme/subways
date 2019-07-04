@@ -1209,7 +1209,8 @@ class City:
             self.warn('Found {} entrances not used in routes or stop_areas: {}'.format(
                 len(unused), format_elid_list(unused)))
         if not_in_sa:
-            self.warn('{} subway entrances are not in stop_area relations'.format(len(not_in_sa)))
+            self.warn('{} subway entrances are not in stop_area relations: {}'.format(
+                len(not_in_sa), format_elid_list(not_in_sa))
 
     def check_return_routes(self, rmaster):
         variants = {}

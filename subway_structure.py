@@ -386,8 +386,13 @@ class RouteStop:
         self.can_enter = False
         self.can_exit = False
         self.seen_stop = False
-        self.seen_platform = False
+        self.seen_platform_entry = False
+        self.seen_platform_exit = False
         self.seen_station = False
+
+    @property
+    def seen_platform(self):
+        return self.seen_platform_entry or self.seen_platform_exit
 
     @staticmethod
     def get_member_type(el, role, modes):
@@ -444,8 +449,18 @@ class RouteStop:
         multiple_check = False
         el_type = RouteStop.get_member_type(el, role, city.modes)
         if el_type == 'platform':
-            multiple_check = self.seen_platform
-            self.seen_platform = True
+            if role == 'platform_entry_only':
+                multiple_check = self.seen_platform_entry
+                self.seen_platform_entry = True
+            elif role == 'platform_exit_only':
+                multiple_check = self.seen_platform_exit
+                self.seen_platform_exit = True
+            else:
+                if role != 'platform' and 'stop' not in role:
+                    city.warn("Platform with invalid role '{}' in a route".format(role), el)
+                multiple_check = self.seen_platform
+                self.seen_platform_entry = True
+                self.seen_platform_exit = True
         elif el_type == 'stop':
             multiple_check = self.seen_stop
             self.seen_stop = True

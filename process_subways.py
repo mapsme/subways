@@ -17,6 +17,7 @@ from subway_io import (
     write_recovery_data,
 )
 from subway_structure import (
+    CriticalValidationError,
     download_cities,
     find_transfers,
     get_unused_entrances_geojson,
@@ -157,10 +158,14 @@ if __name__ == '__main__':
     logging.info('Building routes for each city')
     good_cities = []
     for c in cities:
-        c.extract_routes()
-        c.validate()
-        if c.is_good():
-            good_cities.append(c)
+        try:
+            c.extract_routes()
+        except CriticalValidationError as e:
+            logging.error("Critical validation error: %s", str(e))
+        else:
+            c.validate()
+            if c.is_good():
+                good_cities.append(c)
 
     logging.info('Finding transfer stations')
     transfers = find_transfers(osm, cities)

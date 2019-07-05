@@ -32,6 +32,11 @@ NOWHERE_STOP = (0, 0)  # too far away from any metro system
 used_entrances = set()
 
 
+class CriticalValidationError(Exception):
+    """Is thrown if an error occurs
+    that prevents further validation of a city."""
+
+
 def el_id(el):
     if not el:
         return None
@@ -706,9 +711,10 @@ class Route:
                 if 'stop' in m['role'] or 'platform' in m['role']:
                     city.error('{} {} {} for route relation is not in the dataset'.format(
                         m['role'], m['type'], m['ref']), relation)
-                    raise Exception('Stop or platform {} {} in relation {} '
-                                    'is not in the dataset for {}'.format(
-                                        m['type'], m['ref'], relation['id'], city.name))
+                    raise CriticalValidationError(
+                        'Stop or platform {} {} in relation {} '
+                        'is not in the dataset for {}'.format(
+                            m['type'], m['ref'], relation['id'], city.name))
                 continue
             el = city.elements[k]
             if 'tags' not in el:
@@ -953,6 +959,8 @@ class RouteMaster:
 
 class City:
     def __init__(self, row, overground=False):
+        self.errors = []
+        self.warnings = []
         self.name = row[1]
         self.country = row[2]
         self.continent = row[3]
@@ -1000,8 +1008,6 @@ class City:
         self.transfers = []  # List of lists of stop areas
         self.station_ids = set()  # Set of stations' uid
         self.stops_and_platforms = set()  # Set of stops and platforms el_id
-        self.errors = []
-        self.warnings = []
         self.recovery_data = None
 
     def log_message(self, message, el):
@@ -1152,17 +1158,17 @@ class City:
             'name': self.name,
             'country': self.country,
             'continent': self.continent,
-            'stations_found': self.found_stations,
-            'transfers_found': self.found_interchanges,
-            'unused_entrances': self.unused_entrances,
-            'networks': self.found_networks,
+            'stations_found': getattr(self, 'found_stations', 0),
+            'transfers_found': getattr(self, 'found_interchanges', 0),
+            'unused_entrances': getattr(self, 'unused_entrances', 0),
+            'networks': getattr(self, 'found_networks', 0)
         }
         if not self.overground:
             result.update({
                 'subwayl_expected': self.num_lines,
                 'lightrl_expected': self.num_light_lines,
-                'subwayl_found': self.found_lines,
-                'lightrl_found': self.found_light_lines,
+                'subwayl_found': getattr(self, 'found_lines', 0),
+                'lightrl_found': getattr(self, 'found_light_lines', 0),
                 'stations_expected': self.num_stations,
                 'transfers_expected': self.num_interchanges,
             })
@@ -1174,10 +1180,10 @@ class City:
                 'trolleybusl_expected': self.num_trolleybus_lines,
                 'traml_expected': self.num_tram_lines,
                 'otherl_expected': self.num_other_lines,
-                'busl_found': self.found_bus_lines,
-                'trolleybusl_found': self.found_trolleybus_lines,
-                'traml_found': self.found_tram_lines,
-                'otherl_found': self.found_other_lines,
+                'busl_found': getattr(self, 'found_bus_lines', 0),
+                'trolleybusl_found': getattr(self, 'found_trolleybus_lines', 0),
+                'traml_found': getattr(self, 'found_tram_lines', 0),
+                'otherl_found': getattr(self, 'found_other_lines', 0)
             })
         result['warnings'] = self.warnings
         result['errors'] = self.errors

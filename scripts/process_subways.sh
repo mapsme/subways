@@ -93,5 +93,7 @@ rm "$VALIDATION"
 
 if [ -n "${SERVER-}" ]; then
   scp -q ${SERVER_KEY+-i "$SERVER_KEY"} "$HTML_DIR"/* "$SERVER"
-  [ -n "${REMOVE_HTML-}" ] && rm -r "$HTML_DIR"
+  if [ -n "${REMOVE_HTML-}" ]; then
+    rm -r "$HTML_DIR"
+  fi
 fi

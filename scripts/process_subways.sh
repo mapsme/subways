@@ -58,7 +58,8 @@ if [ -n "${GIT_PULL-}" ]; then (
 PLANET_ABS="$(cd "$(dirname "$PLANET")"; pwd)/$(basename "$PLANET")"
 (
   cd "$OSMCTOOLS" # osmupdate requires osmconvert in a current directory
-  ./osmupdate --drop-author --out-o5m "$PLANET_ABS" ${BBOX+"-b=$BBOX"} "$PLANET_ABS.new.o5m" && mv "$PLANET_ABS.new.o5m" "$PLANET_ABS"
+  ./osmupdate --drop-author --out-o5m "$PLANET_ABS" ${BBOX+"-b=$BBOX"} "$PLANET_ABS.new.o5m"
+  mv "$PLANET_ABS.new.o5m" "$PLANET_ABS"
 )
 
 # Filtering it

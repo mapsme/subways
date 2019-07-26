@@ -34,14 +34,14 @@ if [ ! -f "$OSMCTOOLS/osmupdate" ]; then
     OSMCTOOLS="$(dirname "$(which osmupdate)")"
   else
     echo "Please compile osmctools to $OSMCTOOLS"
-    exit 1
+    exit 3
   fi
 fi
 PYTHON=${PYTHON:-python3}
 # This will fail if there is no python
 "$PYTHON" --version > /dev/null
 SUBWAYS_PATH="$(dirname "$0")/.."
-[ ! -f "$SUBWAYS_PATH/process_subways.py" ] && echo "Please clone the subways repo to $SUBWAYS_PATH" && exit 2
+[ ! -f "$SUBWAYS_PATH/process_subways.py" ] && echo "Please clone the subways repo to $SUBWAYS_PATH" && exit 4
 TMPDIR="${TMPDIR:-$SUBWAYS_PATH}"
 
 # Downloading the latest version of the subways script
@@ -56,11 +56,15 @@ if [ -n "${GIT_PULL-}" ]; then (
 # Updating the planet file
 
 PLANET_ABS="$(cd "$(dirname "$PLANET")"; pwd)/$(basename "$PLANET")"
-(
-  cd "$OSMCTOOLS" # osmupdate requires osmconvert in a current directory
-  ./osmupdate --drop-author --out-o5m "$PLANET_ABS" ${BBOX+"-b=$BBOX"} "$PLANET_ABS.new.o5m"
-  mv "$PLANET_ABS.new.o5m" "$PLANET_ABS"
-)
+pushd "$OSMCTOOLS" # osmupdate requires osmconvert in a current directory
+OSMUPDATE_ERRORS=$(./osmupdate --drop-author --out-o5m "$PLANET_ABS" ${BBOX+"-b=$BBOX"} "$PLANET_ABS.new.o5m" 2>&1)
+if [ -n "$OSMUPDATE_ERRORS" ]; then
+  echo "osmupdate failed: $OSMUPDATE_ERRORS"
+  exit 5
+fi
+popd
+mv "$PLANET_ABS.new.o5m" "$PLANET_ABS"
+
 
 # Filtering it
 

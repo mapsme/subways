@@ -158,7 +158,7 @@ COUNTRY_CITY = '''
 </div><div class="warnings">
 {warnings}
 </div>
-</td></td>
+</td></tr>
 '''
 
 COUNTRY_FOOTER = '''

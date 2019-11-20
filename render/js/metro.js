@@ -66,7 +66,9 @@ L.CitySelect = L.Control.extend({
                 }
 
                 for (var i = 0; i < cities.length; i++) {
-                    city_name = cities[i].split(',')[0];
+                    // Remove country name which follows last comma and doesn't contain commas itself
+                    var last_comma_index = cities[i].lastIndexOf(',');
+                    var city_name = cities[i].substring(0, last_comma_index);
                     content += '<option value="' + city_name + '">' + cities[i] + '</option>';
                 }
 

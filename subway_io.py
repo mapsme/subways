@@ -94,6 +94,21 @@ def load_xml(f):
     return elements
 
 
+_YAML_SPECIAL_CHARACTERS = "!&*{}[],#|>@`'\""
+_YAML_SPECIAL_SEQUENCES = ("- ", ": ", "? ")
+
+def _get_yaml_compatible_string(scalar):
+    """Enclose string in single quotes in some cases"""
+    string = str(scalar)
+    if (string and
+            (string[0] in _YAML_SPECIAL_CHARACTERS
+             or any(seq in string for seq in _YAML_SPECIAL_SEQUENCES)
+             or string.endswith(':'))):
+        string = string.replace("'", "''")
+        string = "'{}'".format(string)
+    return string
+
+
 def dump_yaml(city, f):
     def write_yaml(data, f, indent=''):
         if isinstance(data, (set, list)):
@@ -107,12 +122,12 @@ def dump_yaml(city, f):
             for k, v in data.items():
                 if v is None:
                     continue
-                f.write(indent + str(k) + ': ')
+                f.write(indent + _get_yaml_compatible_string(k) + ': ')
                 write_yaml(v, f, indent + '  ')
                 if isinstance(v, (list, set, dict)):
                     f.write('\n')
         else:
-            f.write(str(data))
+            f.write(_get_yaml_compatible_string(data))
             f.write('\n')
 
     INCLUDE_STOP_AREAS = False
@@ -150,7 +165,7 @@ def dump_yaml(city, f):
     transfers = []
     for t in city.transfers:
         v_stops = ['{} ({})'.format(s.name, s.id) for s in t]
-        transfers.append(v_stops)
+        transfers.append(sorted(v_stops))
 
     result = {
         'stations': sorted(stops),

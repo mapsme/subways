@@ -554,7 +554,7 @@ class Route:
                     # Store the track if it is long and clean it
                     if not warned_about_holes:
                         city.warn('Hole in route rails near node {}'.format(
-                            new_segment[0]), relation)
+                            track[-1]), relation)
                         warned_about_holes = True
                     if len(track) > len(last_track):
                         last_track = track

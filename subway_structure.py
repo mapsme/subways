@@ -395,7 +395,7 @@ class RouteStop:
         return self.seen_platform_entry or self.seen_platform_exit
 
     @staticmethod
-    def get_member_type(el, role, modes):
+    def get_actual_role(el, role, modes):
         if StopArea.is_stop(el):
             return 'stop'
         elif StopArea.is_platform(el):
@@ -447,8 +447,8 @@ class RouteStop:
             city.error('Not a stop or platform in a route relation', el)
 
         multiple_check = False
-        el_type = RouteStop.get_member_type(el, role, city.modes)
-        if el_type == 'platform':
+        actual_role = RouteStop.get_actual_role(el, role, city.modes)
+        if actual_role == 'platform':
             if role == 'platform_entry_only':
                 multiple_check = self.seen_platform_entry
                 self.seen_platform_entry = True
@@ -461,14 +461,14 @@ class RouteStop:
                 multiple_check = self.seen_platform
                 self.seen_platform_entry = True
                 self.seen_platform_exit = True
-        elif el_type == 'stop':
+        elif actual_role == 'stop':
             multiple_check = self.seen_stop
             self.seen_stop = True
         if multiple_check:
             city.error_if(
-                el_type == 'stop',
+                actual_role == 'stop',
                 'Multiple {}s for a station "{}" ({}) in a route relation'.format(
-                    el_type, el['tags'].get('name', ''), el_id(el)), relation)
+                    actual_role, el['tags'].get('name', ''), el_id(el)), relation)
 
     def __repr__(self):
         return 'RouteStop(stop={}, pl_entry={}, pl_exit={}, stoparea={})'.format(
@@ -672,8 +672,10 @@ class Route:
                                'interchange stations'.format(st.name), relation)
                     # city.error(', '.join([x.id for x in st_list]))
                 el = city.elements[k]
-                el_type = RouteStop.get_member_type(el, m['role'], city.modes)
-                if el_type:
+                actual_role = RouteStop.get_actual_role(el, m['role'], city.modes)
+                if actual_role:
+                    if m['role'] and actual_role not in m['role']:
+                        city.warn("Wrong role '{}' for {} {}".format(m['role'], actual_role, k), relation)
                     if repeat_pos is None:
                         if not self.stops or st not in stations:
                             stop = RouteStop(st)
@@ -684,8 +686,8 @@ class Route:
                         else:
                             # We've got a repeat
                             if ((seen_stops and seen_platforms) or
-                                    (el_type == 'stop' and not seen_platforms) or
-                                    (el_type == 'platform' and not seen_stops)):
+                                    (actual_role == 'stop' and not seen_platforms) or
+                                    (actual_role == 'platform' and not seen_stops)):
                                 # Circular route!
                                 stop = RouteStop(st)
                                 self.stops.append(stop)
@@ -696,17 +698,17 @@ class Route:
                         if repeat_pos >= len(self.stops):
                             continue
                         # Check that the type matches
-                        if (el_type == 'stop' and seen_stops) or (
-                                el_type == 'platform' and seen_platforms):
+                        if (actual_role == 'stop' and seen_stops) or (
+                                actual_role == 'platform' and seen_platforms):
                             city.error('Found an out-of-place {}: "{}" ({})'.format(
-                                el_type, el['tags'].get('name', ''), k), relation)
+                                actual_role, el['tags'].get('name', ''), k), relation)
                             continue
                         # Find the matching stop starting with index repeat_pos
                         while (repeat_pos < len(self.stops) and
                                self.stops[repeat_pos].stoparea.id != st.id):
                             repeat_pos += 1
                         if repeat_pos >= len(self.stops):
-                            city.error('Incorrect order of {}s at {}'.format(el_type, k),
+                            city.error('Incorrect order of {}s at {}'.format(actual_role, k),
                                        relation)
                             continue
                         stop = self.stops[repeat_pos]
@@ -735,16 +737,17 @@ class Route:
             if 'tags' not in el:
                 city.error('Untagged object in a route', relation)
                 continue
-            if 'stop' in m['role'] or 'platform' in m['role']:
+            actual_role = RouteStop.get_actual_role(el, m['role'], city.modes)
+            if actual_role:
                 for k in CONSTRUCTION_KEYS:
                     if k in el['tags']:
-                        city.error('An under construction {} in route'.format(m['role']), el)
+                        city.error('An under construction {} in route'.format(actual_role), el)
                         continue
                 if el['tags'].get('railway') in ('station', 'halt'):
-                    city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
+                    city.error('Missing station={} on a {}'.format(self.mode, actual_role), el)
                 else:
                     city.error('{} {} {} is not connected to a station in route'.format(
-                        m['role'], m['type'], m['ref']), relation)
+                        actual_role, m['type'], m['ref']), relation)
         if not self.stops:
             city.error('Route has no stops', relation)
         elif len(self.stops) == 1:

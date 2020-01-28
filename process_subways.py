@@ -170,8 +170,12 @@ if __name__ == '__main__':
     logging.info('Finding transfer stations')
     transfers = find_transfers(osm, cities)
 
-    logging.info('%s good cities: %s', len(good_cities),
-                 ', '.join(sorted([c.name for c in good_cities])))
+    good_city_names = set(c.name for c in good_cities)
+    logging.info('%s good cities: %s', len(good_city_names),
+                 ', '.join(sorted(good_city_names)))
+    bad_city_names = set(c.name for c in cities) - good_city_names
+    logging.info('%s bad cities: %s', len(bad_city_names),
+                 ', '.join(sorted(bad_city_names)))
 
     if options.recovery_path:
         write_recovery_data(options.recovery_path, recovery_data, cities)

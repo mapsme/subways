@@ -204,7 +204,7 @@ class Station:
 
     @staticmethod
     def is_station(el, modes):
-        # public_transport=station is too ambigous and unspecific to use,
+        # public_transport=station is too ambiguous and unspecific to use,
         # so we expect for it to be backed by railway=station.
         if 'tram' in modes and el.get('tags', {}).get('railway') == 'tram_stop':
             return True
@@ -737,17 +737,27 @@ class Route:
             if 'tags' not in el:
                 city.error('Untagged object in a route', relation)
                 continue
-            actual_role = RouteStop.get_actual_role(el, m['role'], city.modes)
-            if actual_role:
-                for k in CONSTRUCTION_KEYS:
-                    if k in el['tags']:
-                        city.error('An under construction {} in route'.format(actual_role), el)
-                        continue
-                if el['tags'].get('railway') in ('station', 'halt'):
-                    city.error('Missing station={} on a {}'.format(self.mode, actual_role), el)
-                else:
+
+            is_under_construction = False
+            for k in CONSTRUCTION_KEYS:
+                if k in el['tags']:
+                    city.error('An under construction {} in route. Consider '
+                               'setting \'inactive\' role or removing construction attributes'
+                               .format(m['role'] or 'feature'), el)
+                    is_under_construction = True
+                    break
+            if is_under_construction:
+                continue
+
+            if el['tags'].get('railway') in ('station', 'halt'):
+                city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
+            else:
+                actual_role = RouteStop.get_actual_role(el, m['role'], city.modes)
+                if actual_role:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         actual_role, m['type'], m['ref']), relation)
+                elif not StopArea.is_track(el):
+                    city.error('Unrecognized member in route', el)
         if not self.stops:
             city.error('Route has no stops', relation)
         elif len(self.stops) == 1:

@@ -663,6 +663,8 @@ class Route:
         seen_platforms = False
         repeat_pos = None
         for m in relation['members']:
+            if 'inactive' in m['role']:
+                continue
             k = el_id(m)
             if k in city.stations:
                 st_list = city.stations[k]
@@ -757,7 +759,7 @@ class Route:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         actual_role, m['type'], m['ref']), relation)
                 elif not StopArea.is_track(el):
-                    city.error('Unrecognized member in route', el)
+                    city.error('Unauthorized member {} {} in route'.format(m['type'], m['ref']), relation)
         if not self.stops:
             city.error('Route has no stops', relation)
         elif len(self.stops) == 1:

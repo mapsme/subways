@@ -741,11 +741,11 @@ class Route:
                 continue
 
             is_under_construction = False
-            for k in CONSTRUCTION_KEYS:
-                if k in el['tags']:
-                    city.error('An under construction {} in route. Consider '
+            for ck in CONSTRUCTION_KEYS:
+                if ck in el['tags']:
+                    city.error('An under construction {} {} in route. Consider '
                                'setting \'inactive\' role or removing construction attributes'
-                               .format(m['role'] or 'feature'), el)
+                               .format(m['role'] or 'feature', k), relation)
                     is_under_construction = True
                     break
             if is_under_construction:

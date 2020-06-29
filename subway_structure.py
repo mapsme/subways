@@ -1082,6 +1082,18 @@ class City:
         transfer = set()
         for m in sag['members']:
             k = el_id(m)
+            el = self.elements.get(k)
+            if not el:
+                # A sag member may validly not belong to the city while
+                # the sag does - near the city bbox boundary
+                continue
+            if 'tags' not in el:
+                self.error('An untagged object {} in a stop_area_group'.format(k), sag)
+                continue
+            if (el['type'] != 'relation' or
+                    el['tags'].get('type') != 'public_transport' or
+                    el['tags'].get('public_transport') != 'stop_area'):
+                continue
             if k in self.stations:
                 stoparea = self.stations[k][0]
                 transfer.add(stoparea)

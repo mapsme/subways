@@ -759,7 +759,7 @@ class Route:
                     city.error('{} {} {} is not connected to a station in route'.format(
                         actual_role, m['type'], m['ref']), relation)
                 elif not StopArea.is_track(el):
-                    city.error('Unauthorized member {} {} in route'.format(m['type'], m['ref']), relation)
+                    city.error('Unknown member type for {} {} in route'.format(m['type'], m['ref']), relation)
         if not self.stops:
             city.error('Route has no stops', relation)
         elif len(self.stops) == 1:

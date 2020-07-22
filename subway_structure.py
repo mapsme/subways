@@ -751,7 +751,11 @@ class Route:
             if is_under_construction:
                 continue
 
-            if el['tags'].get('railway') in ('station', 'halt'):
+            if Station.is_station(el, city.modes):
+                # A station may be not included into this route due to previous
+                # 'stop area has multiple stations' error. No other error message is needed.
+                pass
+            elif el['tags'].get('railway') in ('station', 'halt'):
                 city.error('Missing station={} on a {}'.format(self.mode, m['role']), el)
             else:
                 actual_role = RouteStop.get_actual_role(el, m['role'], city.modes)

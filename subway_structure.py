@@ -51,12 +51,6 @@ def el_center(el):
     if 'lat' in el:
         return (el['lon'], el['lat'])
     elif 'center' in el:
-        if el['center']['lat'] == 0.0:
-            # Some relations don't have centers. We need route_masters and stop_area_groups.
-            if el['type'] == 'relation' and 'tags' in el and (
-                    el['tags'].get('type') == 'route_master' or
-                    el['tags'].get('public_transport') == 'stop_area_group'):
-                return None
         return (el['center']['lon'], el['center']['lat'])
     return None
 
@@ -1071,9 +1065,7 @@ class City:
         if center:
             return (self.bbox[0] <= center[1] <= self.bbox[2] and
                     self.bbox[1] <= center[0] <= self.bbox[3])
-        if 'tags' not in el:
-            return False
-        return 'route_master' in el['tags'] or 'public_transport' in el['tags']
+        return False
 
     def add(self, el):
         if el['type'] == 'relation' and 'members' not in el:

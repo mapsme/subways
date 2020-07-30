@@ -1,7 +1,6 @@
 import logging
 import math
 import functools
-from itertools import chain
 
 
 """A coordinate of a station precision of which we must take into account
@@ -20,6 +19,11 @@ def osm_id_comparator(el):
        OSM-originated objects
     """
     return (el['osm_type'], el['osm_id'])
+
+
+def itinerary_comparator(itinerary):
+    "This function is used as key for sorting itineraries in a route"""
+    return (itinerary['stops'], itinerary['interval'])
 
 
 def compare_stops(stop0, stop1):
@@ -119,10 +123,8 @@ def compare_networks(network0, network1):
                           route0['route_id'], route0_props, route1_props)
             return False
 
-        itineraries0 = sorted(route0['itineraries'],
-                              key=lambda x: tuple(chain(*x['stops'])))
-        itineraries1 = sorted(route1['itineraries'],
-                              key=lambda x: tuple(chain(*x['stops'])))
+        itineraries0 = sorted(route0['itineraries'], key=itinerary_comparator)
+        itineraries1 = sorted(route1['itineraries'], key=itinerary_comparator)
 
         for itin0, itin1 in zip(itineraries0, itineraries1):
             if itin0['interval'] != itin1['interval']:

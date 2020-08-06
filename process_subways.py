@@ -67,6 +67,98 @@ def slugify(name):
     return re.sub(r'[^a-z0-9_-]+', '', name.lower().replace(' ', '_'))
 
 
+def calculate_centers(elements):
+    """Adds 'center' key to each way/relation in elements,
+       except for empty ways or relations.
+       Relies on nodes-ways-relations order in the elements list.
+    """
+    nodes = {}      # id(int) => (lat, lon)
+    ways = {}       # id(int) => (lat, lon)
+    relations = {}  # id(int) => (lat, lon)
+    empty_relations = set()  # ids(int) of relations without members
+                             # or containing only empty relations
+
+    def calculate_way_center(el):
+        # If element has been queried via overpass-api with 'out center;'
+        # clause then ways already have 'center' attribute
+        if 'center' in el:
+            ways[el['id']] = (el['center']['lat'], el['center']['lon'])
+            return
+        center = [0, 0]
+        count = 0
+        for nd in el['nodes']:
+            if nd in nodes:
+                center[0] += nodes[nd][0]
+                center[1] += nodes[nd][1]
+                count += 1
+        if count > 0:
+            el['center'] = {'lat': center[0] / count, 'lon': center[1] / count}
+            ways[el['id']] = (el['center']['lat'], el['center']['lon'])
+
+    def calculate_relation_center(el):
+        # If element has been queried via overpass-api with 'out center;'
+        # clause then some relations already have 'center' attribute
+        if 'center' in el:
+            relations[el['id']] = (el['center']['lat'], el['center']['lon'])
+            return True
+        center = [0, 0]
+        count = 0
+        for m in el.get('members', []):
+            if m['type'] == 'relation' and m['ref'] not in relations:
+                if m['ref'] in empty_relations:
+                    # Ignore empty child relations
+                    continue
+                else:
+                    # Center of child relation is not known yet
+                    return False
+            member_container = (nodes if m['type'] == 'node' else
+                                ways if m['type'] == 'way' else
+                                relations)
+            if m['ref'] in member_container:
+                center[0] += member_container[m['ref']][0]
+                center[1] += member_container[m['ref']][1]
+                count += 1
+        if count == 0:
+            empty_relations.add(el['id'])
+        else:
+            el['center'] = {'lat': center[0] / count, 'lon': center[1] / count}
+            relations[el['id']] = (el['center']['lat'], el['center']['lon'])
+        return True
+
+    relations_without_center = []
+
+    for el in elements:
+        if el['type'] == 'node':
+            nodes[el['id']] = (el['lat'], el['lon'])
+        elif el['type'] == 'way':
+            if 'nodes' in el:
+                calculate_way_center(el)
+        elif el['type'] == 'relation':
+            if not calculate_relation_center(el):
+                relations_without_center.append(el)
+
+    # Calculate centers for relations that have no one yet
+    while relations_without_center:
+        new_relations_without_center = []
+        for rel in relations_without_center:
+            if not calculate_relation_center(rel):
+                new_relations_without_center.append(rel)
+        if len(new_relations_without_center) == len(relations_without_center):
+            break
+        relations_without_center = new_relations_without_center
+
+    if relations_without_center:
+        logging.error("Cannot calculate center for the relations (%d in total): %s%s",
+                      len(relations_without_center),
+                      ', '.join(str(rel['id']) for rel in relations_without_center[:20]),
+                      ", ..." if len(relations_without_center) > 20 else "")
+    if empty_relations:
+        logging.warning("Empty relations (%d in total): %s%s",
+                        len(empty_relations),
+                        ', '.join(str(x) for x in list(empty_relations)[:20]),
+                        ", ..." if len(empty_relations) > 20 else "")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -127,9 +219,11 @@ if __name__ == '__main__':
             osm = json.load(f)
             if 'elements' in osm:
                 osm = osm['elements']
+            calculate_centers(osm)
     elif options.xml:
         logging.info('Reading %s', options.xml)
         osm = load_xml(options.xml)
+        calculate_centers(osm)
         if options.source:
             with open(options.source, 'w', encoding='utf-8') as f:
                 json.dump(osm, f)
@@ -144,6 +238,7 @@ if __name__ == '__main__':
             bboxes = None
         logging.info('Downloading data from Overpass API')
         osm = multi_overpass(options.overground, options.overpass_api, bboxes)
+        calculate_centers(osm)
         if options.source:
             with open(options.source, 'w', encoding='utf-8') as f:
                 json.dump(osm, f)

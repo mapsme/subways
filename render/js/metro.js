@@ -37,6 +37,8 @@ var hint = L.marker(initialLocation, {opacity: 0})
  .bindPopup('Choose a city from the list at the top-right corner!')
  .openPopup();
 
+// Array of slugified city names
+var cityNames = [];
 
 // Inspired by http://ahalota.github.io/Leaflet.CountrySelect
 L.CitySelect = L.Control.extend({
@@ -67,12 +69,23 @@ L.CitySelect = L.Control.extend({
 
                 for (var i = 0; i < cities.length; i++) {
                     // Remove country name which follows last comma and doesn't contain commas itself
-                    var last_comma_index = cities[i].lastIndexOf(',');
-                    var city_name = cities[i].substring(0, last_comma_index);
-                    content += '<option value="' + city_name + '">' + cities[i] + '</option>';
+                    var lastCommaIndex = cities[i].lastIndexOf(',');
+                    var cityName = cities[i].substring(0, lastCommaIndex);
+                    cityName = slugify(cityName);
+                    content += '<option value="' + cityName + '">' + cities[i] + '</option>';
+                    cityNames.push(cityName);
                 }
 
                 that.select.innerHTML = content;
+
+                var hash = window.location.hash;
+                if (hash && hash[0] === '#')
+                    hash = hash.substring(1);
+                var cityName = decodeURI(hash);
+                if (cityName)
+                    chooseCity(cityName);
+                 window.location.hash = '';
+
              }
         );
 
@@ -101,20 +114,31 @@ L.citySelect = function(id, options) {
 
 var selector = L.citySelect({position: 'topright'}).addTo(map);
 selector.on('change', function(e) {
-    if (e.cityName === selector.options.title)
+    chooseCity(e.cityName);
+});
+
+
+function chooseCity(cityName)
+{
+    var index = cityNames.indexOf(cityName);
+    if (index === -1) {
+        setCityLayer(null);
         return;
+    }
+     
+    // This is needed if the function was triggered not by list item selection
+    // but by city name in url hash
+    selector.select.value = cityName;
 
     if (hint !== null) {
         map.removeLayer(hint);
         hint = null;
     }
 
-    var cityName = e.cityName;
-
-    ajax(slugify(cityName) + '.geojson',
-         function (responseText) {
+    ajax(cityName + '.geojson',
+        function (responseText) {
             var json = JSON.parse(responseText);
-            var newCity = L.geoJSON(json, {
+            var cityLayer = L.geoJSON(json, {
                 style: function(feature) {
                     if ('stroke' in feature.properties)
                         return {color: feature.properties.stroke};
@@ -129,16 +153,21 @@ selector.on('change', function(e) {
                 }
             });
 
-            if (map.previousCity !== undefined) {
-                map.removeLayer(map.previousCity);
-            }
-            map.previousCity = newCity;
-
-            map.addLayer(newCity);
-            map.fitBounds(newCity.getBounds());
+            setCityLayer(cityLayer);
          },
          function (statusText, status) {
             alert("Cannot fetch city data for " + cityName + ".\nError code: " + status);
          }
     );
-});
+}
+
+function setCityLayer(cityLayer) {
+    if (map.cityLayer) {
+        map.removeLayer(map.cityLayer);
+    }
+    if (cityLayer) {
+        map.addLayer(cityLayer);
+        map.fitBounds(cityLayer.getBounds());
+    }
+    map.cityLayer = cityLayer;
+}

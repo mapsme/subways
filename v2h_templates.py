@@ -138,7 +138,12 @@ COUNTRY_HEADER = '''
 
 COUNTRY_CITY = '''
 <tr id="{slug}">
-<td class="bold color{good_cities}">{city}{?yaml} <a href="{yaml}" class="hlink">Y</a>{end}{?json} <a href="{json}" class="hlink">J</a>{end}</td>
+<td class="bold color{good_cities}">
+  {city}
+  {?yaml}<a href="{yaml}" class="hlink" title="Download YAML">Y</a>{end}
+  {?json}<a href="{json}" class="hlink" title="Download GeoJSON">J</a>{end}
+  {?json}<a href="render.html#{slug}" class="hlink" title="View map" target="_blank">M</a>{end}
+</td>
 {?subways}
 <td class="color{=subwayl}">sub: {subwayl_found} / {subwayl_expected}</td>
 <td class="color{=lightrl}">lr: {lightrl_found} / {lightrl_expected}</td>

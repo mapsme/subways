@@ -84,8 +84,6 @@ L.CitySelect = L.Control.extend({
                 var cityName = decodeURI(hash);
                 if (cityName)
                     chooseCity(cityName);
-                 window.location.hash = '';
-
              }
         );
 
@@ -123,11 +121,14 @@ function chooseCity(cityName)
     var index = cityNames.indexOf(cityName);
     if (index === -1) {
         setCityLayer(null);
+        window.location.hash = '';
+        selector.select.selectedIndex = 0;
         return;
     }
      
-    // This is needed if the function was triggered not by list item selection
-    // but by city name in url hash
+    // The function may be triggered by city name in URL hash on page load or by
+    // city selection by user. We need synchronize URL hash and selected option.
+    window.location.hash = cityName;
     selector.select.value = cityName;
 
     if (hint !== null) {

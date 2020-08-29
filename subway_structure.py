@@ -1119,6 +1119,11 @@ class City:
         processed_stop_areas = set()
         for el in self.elements.values():
             if Station.is_station(el, self.modes):
+                # See PR https://github.com/mapsme/subways/pull/98 
+                if el['type'] == 'relation' and el['tags'].get('type') != 'multipolygon':
+                    self.error("A railway station cannot be a relation of type '{}'".format(
+                                      el['tags'].get('type')), el)
+                    continue
                 st = Station(el, self)
                 self.station_ids.add(st.id)
                 if st.id in self.stop_areas:

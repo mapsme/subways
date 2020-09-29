@@ -88,15 +88,20 @@ def project_on_line(p, line):
         return (p1[0] + u*dp[0], p1[1] + u*dp[1])
         """
 
-    result = NOWHERE_STOP
+    result = {
+        'index_on_rails': None,  # Roughly, the index of the closest vertex of line to the point p
+        'projected_point': None  # (lon, lat)
+    }
+    min_d = None
     if len(line) < 2:
         return result
     d_min = MAX_DISTANCE_STOP_TO_LINE * 5
     # First, check vertices in the line
-    for vertex in line:
+    for i, vertex in enumerate(line):
         d = distance(p, vertex)
         if d < d_min:
-            result = vertex
+            result['index_on_rails'] = i
+            result['projected_point'] = vertex
             d_min = d
     # And then calculate distances to each segment
     for seg in range(len(line)-1):
@@ -110,7 +115,8 @@ def project_on_line(p, line):
         if proj:
             d = distance(p, proj)
             if d < d_min:
-                result = proj
+                result['index_on_rails'] = seg + 0.5
+                result['projected_point'] = proj
                 d_min = d
     return result
 
@@ -512,17 +518,17 @@ class Route:
         except ValueError:
             return None
 
-    def build_longest_line(self, relation, city):
+    def build_longest_line(self, relation):
         line_nodes = set()
         last_track = []
         track = []
         warned_about_holes = False
         for m in relation['members']:
-            el = city.elements.get(el_id(m), None)
+            el = self.city.elements.get(el_id(m), None)
             if not el or not StopArea.is_track(el):
                 continue
             if 'nodes' not in el or len(el['nodes']) < 2:
-                city.error('Cannot find nodes in a railway', el)
+                self.city.error('Cannot find nodes in a railway', el)
                 continue
             nodes = ['n{}'.format(n) for n in el['nodes']]
             if m['role'] == 'backward':
@@ -547,7 +553,7 @@ class Route:
                 else:
                     # Store the track if it is long and clean it
                     if not warned_about_holes:
-                        city.warn('Hole in route rails near node {}'.format(
+                        self.city.warn('Hole in route rails near node {}'.format(
                             track[-1]), relation)
                         warned_about_holes = True
                     if len(track) > len(last_track):
@@ -564,36 +570,54 @@ class Route:
     def project_stops_on_line(self):
         projected = [project_on_line(x.stop, self.tracks) for x in self.stops]
         start = 0
-        while start < len(self.stops) and distance(
-                self.stops[start].stop, projected[start]) > MAX_DISTANCE_STOP_TO_LINE:
+        while (start < len(self.stops) and
+                (
+                    projected[start]['projected_point'] is None or
+                    distance(
+                       self.stops[start].stop,
+                       projected[start]['projected_point']
+                    ) > MAX_DISTANCE_STOP_TO_LINE
+                )
+        ):
             start += 1
         end = len(self.stops) - 1
-        while end > start and distance(
-                self.stops[end].stop, projected[end]) > MAX_DISTANCE_STOP_TO_LINE:
+        while (end > start and
+                (
+                    projected[end]['projected_point'] is None or
+                    distance(
+                        self.stops[end].stop,
+                        projected[end]['projected_point']
+                    ) > MAX_DISTANCE_STOP_TO_LINE
+                )
+        ):
             end -= 1
         tracks_start = []
         tracks_end = []
-        for i in range(len(self.stops)):
+        stops_on_longest_line = []
+        for i, route_stop in enumerate(self.stops):
             if i < start:
-                tracks_start.append(self.stops[i].stop)
+                tracks_start.append(route_stop.stop)
             elif i > end:
-                tracks_end.append(self.stops[i].stop)
-            elif projected[i] == NOWHERE_STOP:
+                tracks_end.append(route_stop.stop)
+            elif projected[i]['projected_point'] is None:
                 self.city.error('Stop "{}" {} is nowhere near the tracks'.format(
-                    self.stops[i].stoparea.name, self.stops[i].stop), self.element)
+                    route_stop.stoparea.name, route_stop.stop), self.element)
             else:
                 # We've got two separate stations with a good stretch of
                 # railway tracks between them. Put these on tracks.
-                d = round(distance(self.stops[i].stop, projected[i]))
+                d = round(distance(route_stop.stop, projected[i]['projected_point']))
                 if d > MAX_DISTANCE_STOP_TO_LINE:
                     self.city.warn('Stop "{}" {} is {} meters from the tracks'.format(
-                        self.stops[i].stoparea.name, self.stops[i].stop, d), self.element)
+                        route_stop.stoparea.name, route_stop.stop, d), self.element)
                 else:
-                    self.stops[i].stop = projected[i]
+                    route_stop.stop = projected[i]['projected_point']
+                route_stop.index_on_rails = projected[i]['index_on_rails']
+                stops_on_longest_line.append(route_stop)
         if start >= len(self.stops):
             self.tracks = tracks_start
         elif tracks_start or tracks_end:
             self.tracks = tracks_start + self.tracks + tracks_end
+        return stops_on_longest_line
 
     def calculate_distances(self):
         dist = 0
@@ -643,10 +667,10 @@ class Route:
                        'is an unsorted pile of objects', relation)
         self.is_circular = False
         # self.tracks would be a list of (lon, lat) for the longest stretch. Can be empty
-        tracks, line_nodes = self.build_longest_line(relation, city)
+        tracks, line_nodes = self.build_longest_line(relation)
         self.tracks = [el_center(city.elements.get(k)) for k in tracks]
-        if None in self.tracks:
-            self.tracks = []  # this should not happen
+        if None in self.tracks:  # usually, extending BBOX for the city is needed
+            self.tracks = []
             for n in filter(lambda x: x not in city.elements, tracks):
                 city.error('The dataset is missing the railway tracks node {}'.format(n), relation)
                 break
@@ -666,7 +690,6 @@ class Route:
                 if len(st_list) > 1:
                     city.error('Ambiguous station {} in route. Please use stop_position or split '
                                'interchange stations'.format(st.name), relation)
-                    # city.error(', '.join([x.id for x in st_list]))
                 el = city.elements[k]
                 actual_role = RouteStop.get_actual_role(el, m['role'], city.modes)
                 if actual_role:
@@ -764,8 +787,8 @@ class Route:
             city.error('Route has only one stop', relation)
         else:
             self.is_circular = self.stops[0].stoparea == self.stops[-1].stoparea
-            self.project_stops_on_line()
-            self.check_and_recover_stops_order()
+            stops_on_longest_line = self.project_stops_on_line()
+            self.check_and_recover_stops_order(stops_on_longest_line)
             proj1 = find_segment(self.stops[1].stop, self.tracks)
             proj2 = find_segment(self.stops[min(len(self.stops)-1, 3)].stop, self.tracks)
             if proj1[0] and proj2[0] and (proj1[0] > proj2[0] or
@@ -774,7 +797,7 @@ class Route:
                 self.tracks.reverse()
             self.calculate_distances()
 
-    def check_stops_order(self):
+    def check_stops_order_by_angle(self):
         disorder_warnings = []
         disorder_errors = []
         for si in range(len(self.stops) - 2):
@@ -790,8 +813,71 @@ class Route:
                     disorder_warnings.append(msg)
         return disorder_warnings, disorder_errors
 
-    def check_and_recover_stops_order(self):
-        disorder_warnings, disorder_errors = self.check_stops_order()
+    def check_stops_order_on_tracks_direct(self, stop_sequence):
+        """ Checks stops order on tracks, following stop_sequence
+            in direct order only.
+        :param stops_sequence: list of RouteStop that belong to the
+        longest contiguous sequence of tracks in a route.
+        :return: error message on first order violation or None
+        """
+        def make_error_message(route_stop):
+            return 'Stops on tacks are unordered near "{}" {}'.format(
+                                    route_stop.stoparea.name,
+                                    route_stop.stop
+            )
+
+        if not self.is_circular:
+            max_index_on_rails = -1
+            for route_stop in stop_sequence:
+                if route_stop.index_on_rails > max_index_on_rails:
+                    max_index_on_rails = route_stop.index_on_rails
+                else:
+                    return make_error_message(route_stop)
+        else:
+            # In a circular route the index_on_rails of stops in a sequence
+            # may drop only once after which it cannot raise higher than it was
+            # before the drop.
+            max_index_on_rails = -1
+            first_index_on_rails = None
+            was_transposition = False
+            for route_stop in stop_sequence:
+                if first_index_on_rails is None:
+                    first_index_on_rails = route_stop.index_on_rails
+
+                if not was_transposition:
+                    if route_stop.index_on_rails < max_index_on_rails:
+                        was_transposition = True
+                else:
+                    if (route_stop.index_on_rails < max_index_on_rails or
+                            route_stop.index_on_rails > first_index_on_rails):
+                        return make_error_message(route_stop)
+                max_index_on_rails = route_stop.index_on_rails
+
+    def check_stops_order_on_tracks(self, stops_sequence):
+        """ Checks stops order on tracks, trying direct and reversed
+            order of stops in the stop_sequence.
+        :param stops_sequence: list of RouteStop that belong to the
+        longest contiguous sequence of tracks in a route.
+        :return: error message on first order violation or None
+        """
+        error_message = self.check_stops_order_on_tracks_direct(stops_sequence)
+        if error_message:
+            error_message_reversed = self.check_stops_order_on_tracks_direct(reversed(stops_sequence))
+            if error_message_reversed is None:
+                error_message = None
+        return error_message
+
+    def check_stops_order(self, stops_on_longest_line):
+        angle_disorder_warnings, angle_disorder_errors = self.check_stops_order_by_angle()
+        disorder_on_tracks_error = self.check_stops_order_on_tracks(stops_on_longest_line)
+        disorder_warnings = angle_disorder_warnings
+        disorder_errors = angle_disorder_errors
+        if disorder_on_tracks_error:
+            disorder_errors.append(disorder_on_tracks_error)
+        return disorder_warnings, disorder_errors
+
+    def check_and_recover_stops_order(self, stops_on_longest_line):
+        disorder_warnings, disorder_errors = self.check_stops_order(stops_on_longest_line)
         if disorder_warnings or disorder_errors:
             resort_success = False
             if self.city.recovery_data:
@@ -1029,7 +1115,7 @@ class City:
             self.bbox = None
 
         self.elements = {}   # Dict el_id → el
-        self.stations = defaultdict(list)   # Dict el_id → list of stop areas
+        self.stations = defaultdict(list)   # Dict el_id → list of StopAreas
         self.routes = {}     # Dict route_ref → route
         self.masters = {}    # Dict el_id of route → route_master
         self.stop_areas = defaultdict(list)  # El_id → list of el_id of stop_area
@@ -1081,13 +1167,13 @@ class City:
             elif el['tags'].get('public_transport') == 'stop_area':
                 warned_about_duplicates = False
                 for m in el['members']:
-                    stop_area = self.stop_areas[el_id(m)]
-                    if el in stop_area:
+                    stop_areas = self.stop_areas[el_id(m)]
+                    if el in stop_areas:
                         if not warned_about_duplicates:
                             self.warn('Duplicate element in a stop area', el)
                             warned_about_duplicates = True
                     else:
-                        stop_area.append(el)
+                        stop_areas.append(el)
 
     def make_transfer(self, sag):
         transfer = set()

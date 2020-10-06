@@ -74,22 +74,19 @@ def project_on_line(p, line):
         dp = (p2[0] - p1[0], p2[1] - p1[1])
         d2 = dp[0]*dp[0] + dp[1]*dp[1]
         if d2 < 1e-14:
-            return None
+            return None, None
         # u is the position of projection of p point on line p1p2
         # regarding point p1 and (p2-p1) direction vector
         u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
-        res = (p1[0] + u*dp[0], p1[1] + u*dp[1])
-        if res[0] < min(p1[0], p2[0]) or res[0] > max(p1[0], p2[0]):
-            return None
-        return res
-        """ # TODO: test this condition and use it instead of current approach.
         if not 0 <= u <= 1:
-            return None
-        return (p1[0] + u*dp[0], p1[1] + u*dp[1])
-        """
+            return None, None
+        return (p1[0] + u*dp[0], p1[1] + u*dp[1]), u
 
     result = {
-        'index_on_rails': None,  # Roughly, the index of the closest vertex of line to the point p
+        # In the first approximation, position_on_rails is the index of the
+        # closest vertex of line to the point p. Fractional value means that
+        # the projected point lies on a segment between two vertices.
+        'position_on_rails': None,
         'projected_point': None  # (lon, lat)
     }
     min_d = None
@@ -100,7 +97,7 @@ def project_on_line(p, line):
     for i, vertex in enumerate(line):
         d = distance(p, vertex)
         if d < d_min:
-            result['index_on_rails'] = i
+            result['position_on_rails'] = i
             result['projected_point'] = vertex
             d_min = d
     # And then calculate distances to each segment
@@ -111,12 +108,12 @@ def project_on_line(p, line):
                 (min(line[seg][1], line[seg+1][1]) - MAX_DISTANCE_STOP_TO_LINE <= p[1] <=
                  max(line[seg][1], line[seg+1][1]) + MAX_DISTANCE_STOP_TO_LINE)):
             continue
-        proj = project_on_segment(p, line[seg], line[seg+1])
-        if proj:
-            d = distance(p, proj)
+        projected_point, u = project_on_segment(p, line[seg], line[seg+1])
+        if projected_point:
+            d = distance(p, projected_point)
             if d < d_min:
-                result['index_on_rails'] = seg + 0.5
-                result['projected_point'] = proj
+                result['position_on_rails'] = seg + u
+                result['projected_point'] = projected_point
                 d_min = d
     return result
 
@@ -611,7 +608,7 @@ class Route:
                         route_stop.stoparea.name, route_stop.stop, d), self.element)
                 else:
                     route_stop.stop = projected[i]['projected_point']
-                route_stop.index_on_rails = projected[i]['index_on_rails']
+                route_stop.position_on_rails = projected[i]['position_on_rails']
                 stops_on_longest_line.append(route_stop)
         if start >= len(self.stops):
             self.tracks = tracks_start
@@ -827,31 +824,31 @@ class Route:
             )
 
         if not self.is_circular:
-            max_index_on_rails = -1
+            max_position_on_rails = -1
             for route_stop in stop_sequence:
-                if route_stop.index_on_rails > max_index_on_rails:
-                    max_index_on_rails = route_stop.index_on_rails
+                if route_stop.position_on_rails > max_position_on_rails:
+                    max_position_on_rails = route_stop.position_on_rails
                 else:
                     return make_error_message(route_stop)
         else:
-            # In a circular route the index_on_rails of stops in a sequence
+            # In a circular route the position_on_rails of stops in a sequence
             # may drop only once after which it cannot raise higher than it was
             # before the drop.
-            max_index_on_rails = -1
-            first_index_on_rails = None
+            max_position_on_rails = -1
+            first_position_on_rails = None
             was_transposition = False
             for route_stop in stop_sequence:
-                if first_index_on_rails is None:
-                    first_index_on_rails = route_stop.index_on_rails
+                if first_position_on_rails is None:
+                    first_position_on_rails = route_stop.position_on_rails
 
                 if not was_transposition:
-                    if route_stop.index_on_rails < max_index_on_rails:
+                    if route_stop.position_on_rails < max_position_on_rails:
                         was_transposition = True
                 else:
-                    if (route_stop.index_on_rails < max_index_on_rails or
-                            route_stop.index_on_rails > first_index_on_rails):
+                    if (route_stop.position_on_rails < max_position_on_rails or
+                            route_stop.position_on_rails > first_position_on_rails):
                         return make_error_message(route_stop)
-                max_index_on_rails = route_stop.index_on_rails
+                max_position_on_rails = route_stop.position_on_rails
 
     def check_stops_order_on_tracks(self, stops_sequence):
         """ Checks stops order on tracks, trying direct and reversed

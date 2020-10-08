@@ -74,32 +74,38 @@ def project_on_line(p, line):
         dp = (p2[0] - p1[0], p2[1] - p1[1])
         d2 = dp[0]*dp[0] + dp[1]*dp[1]
         if d2 < 1e-14:
-            return None, None
+            return None
         # u is the position of projection of p point on line p1p2
         # regarding point p1 and (p2-p1) direction vector
         u = ((p[0] - p1[0])*dp[0] + (p[1] - p1[1])*dp[1]) / d2
         if not 0 <= u <= 1:
-            return None, None
-        return (p1[0] + u*dp[0], p1[1] + u*dp[1]), u
+            return None
+        return u
 
     result = {
-        # In the first approximation, position_on_rails is the index of the
+        # In the first approximation, position on rails is the index of the
         # closest vertex of line to the point p. Fractional value means that
-        # the projected point lies on a segment between two vertices.
-        'position_on_rails': None,
+        # the projected point lies on a segment between two vertices. More than
+        # one value can occur if a route follows the same tracks more than once.
+        'positions_on_rails': None,
         'projected_point': None  # (lon, lat)
     }
-    min_d = None
+
     if len(line) < 2:
         return result
     d_min = MAX_DISTANCE_STOP_TO_LINE * 5
+    closest_to_vertex = False
     # First, check vertices in the line
     for i, vertex in enumerate(line):
         d = distance(p, vertex)
         if d < d_min:
-            result['position_on_rails'] = i
+            result['positions_on_rails'] = [i]
             result['projected_point'] = vertex
             d_min = d
+            closest_to_vertex = True
+        elif vertex == result['projected_point']:
+            # Repeated occurrence of the track vertex in line, like Oslo Line 5
+            result['positions_on_rails'].append(i)
     # And then calculate distances to each segment
     for seg in range(len(line)-1):
         # Check bbox for speed
@@ -108,13 +114,22 @@ def project_on_line(p, line):
                 (min(line[seg][1], line[seg+1][1]) - MAX_DISTANCE_STOP_TO_LINE <= p[1] <=
                  max(line[seg][1], line[seg+1][1]) + MAX_DISTANCE_STOP_TO_LINE)):
             continue
-        projected_point, u = project_on_segment(p, line[seg], line[seg+1])
-        if projected_point:
+        u = project_on_segment(p, line[seg], line[seg+1])
+        if u:
+            projected_point = (
+                line[seg][0] + u * (line[seg+1][0] - line[seg][0]),
+                line[seg][1] + u * (line[seg+1][1] - line[seg][1])
+            )
             d = distance(p, projected_point)
             if d < d_min:
-                result['position_on_rails'] = seg + u
+                result['positions_on_rails'] = [seg + u]
                 result['projected_point'] = projected_point
                 d_min = d
+                closest_to_vertex = False
+            elif projected_point == result['projected_point']:
+                # Repeated occurrence of the track segment in line, like Oslo Line 5
+                if not closest_to_vertex:
+                    result['positions_on_rails'].append(seg + u)
     return result
 
 
@@ -600,15 +615,16 @@ class Route:
                 self.city.error('Stop "{}" {} is nowhere near the tracks'.format(
                     route_stop.stoparea.name, route_stop.stop), self.element)
             else:
+                projected_point = projected[i]['projected_point']
                 # We've got two separate stations with a good stretch of
                 # railway tracks between them. Put these on tracks.
-                d = round(distance(route_stop.stop, projected[i]['projected_point']))
+                d = round(distance(route_stop.stop, projected_point))
                 if d > MAX_DISTANCE_STOP_TO_LINE:
                     self.city.warn('Stop "{}" {} is {} meters from the tracks'.format(
                         route_stop.stoparea.name, route_stop.stop, d), self.element)
                 else:
-                    route_stop.stop = projected[i]['projected_point']
-                route_stop.position_on_rails = projected[i]['position_on_rails']
+                    route_stop.stop = projected_point
+                route_stop.positions_on_rails = projected[i]['positions_on_rails']
                 stops_on_longest_line.append(route_stop)
         if start >= len(self.stops):
             self.tracks = tracks_start
@@ -786,12 +802,6 @@ class Route:
             self.is_circular = self.stops[0].stoparea == self.stops[-1].stoparea
             stops_on_longest_line = self.project_stops_on_line()
             self.check_and_recover_stops_order(stops_on_longest_line)
-            proj1 = find_segment(self.stops[1].stop, self.tracks)
-            proj2 = find_segment(self.stops[min(len(self.stops)-1, 3)].stop, self.tracks)
-            if proj1[0] and proj2[0] and (proj1[0] > proj2[0] or
-                                          (proj1[0] == proj2[0] and proj1[1] > proj2[1])):
-                city.warn('Tracks seem to go in the opposite direction to stops', relation)
-                self.tracks.reverse()
             self.calculate_distances()
 
     def check_stops_order_by_angle(self):
@@ -815,53 +825,40 @@ class Route:
             in direct order only.
         :param stops_sequence: list of RouteStop that belong to the
         longest contiguous sequence of tracks in a route.
-        :return: error message on first order violation or None
+        :return: error message on the first order violation or None.
         """
-        def make_error_message(route_stop):
-            return 'Stops on tacks are unordered near "{}" {}'.format(
-                                    route_stop.stoparea.name,
-                                    route_stop.stop
-            )
-
-        if not self.is_circular:
-            max_position_on_rails = -1
-            for route_stop in stop_sequence:
-                if route_stop.position_on_rails > max_position_on_rails:
-                    max_position_on_rails = route_stop.position_on_rails
+        allowed_order_violations = 1 if self.is_circular else 0
+        max_position_on_rails = -1
+        for route_stop in stop_sequence:
+            positions_on_rails = route_stop.positions_on_rails
+            suitable_occurrence = 0
+            while (suitable_occurrence < len(positions_on_rails) and
+                   positions_on_rails[suitable_occurrence] < max_position_on_rails):
+                suitable_occurrence += 1
+            if suitable_occurrence == len(positions_on_rails):
+                if allowed_order_violations > 0:
+                    suitable_occurrence -= 1
+                    allowed_order_violations -= 1
                 else:
-                    return make_error_message(route_stop)
-        else:
-            # In a circular route the position_on_rails of stops in a sequence
-            # may drop only once after which it cannot raise higher than it was
-            # before the drop.
-            max_position_on_rails = -1
-            first_position_on_rails = None
-            was_transposition = False
-            for route_stop in stop_sequence:
-                if first_position_on_rails is None:
-                    first_position_on_rails = route_stop.position_on_rails
-
-                if not was_transposition:
-                    if route_stop.position_on_rails < max_position_on_rails:
-                        was_transposition = True
-                else:
-                    if (route_stop.position_on_rails < max_position_on_rails or
-                            route_stop.position_on_rails > first_position_on_rails):
-                        return make_error_message(route_stop)
-                max_position_on_rails = route_stop.position_on_rails
+                    return 'Stops on tracks are unordered near "{}" {}'.format(
+                                route_stop.stoparea.name,
+                                route_stop.stop
+                    )
+            max_position_on_rails = positions_on_rails[suitable_occurrence]
 
     def check_stops_order_on_tracks(self, stops_sequence):
         """ Checks stops order on tracks, trying direct and reversed
             order of stops in the stop_sequence.
         :param stops_sequence: list of RouteStop that belong to the
         longest contiguous sequence of tracks in a route.
-        :return: error message on first order violation or None
+        :return: error message on the first order violation or None.
         """
         error_message = self.check_stops_order_on_tracks_direct(stops_sequence)
         if error_message:
             error_message_reversed = self.check_stops_order_on_tracks_direct(reversed(stops_sequence))
             if error_message_reversed is None:
                 error_message = None
+                self.city.warn('Tracks seem to go in the opposite direction to stops', self.element)
         return error_message
 
     def check_stops_order(self, stops_on_longest_line):

@@ -256,7 +256,11 @@ if __name__ == '__main__':
         try:
             c.extract_routes()
         except CriticalValidationError as e:
-            logging.error("Critical validation error: %s", str(e))
+            logging.error("Critical validation error while processing %s: %s", c.name, str(e))
+            c.error(str(e))
+        except AssertionError as e:
+            logging.error("Validation logic error while processing %s: %s", c.name, str(e))
+            c.error("Validation logic error: {}".format(str(e)))
         else:
             c.validate()
             if c.is_good():

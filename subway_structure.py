@@ -27,7 +27,6 @@ ALL_MODES = MODES_RAPID | MODES_OVERGROUND
 RAILWAY_TYPES = set(('rail', 'light_rail', 'subway', 'narrow_gauge',
                      'funicular', 'monorail', 'tram'))
 CONSTRUCTION_KEYS = ('construction', 'proposed', 'construction:railway', 'proposed:railway')
-NOWHERE_STOP = (0, 0)  # too far away from any metro system
 
 used_entrances = set()
 
@@ -87,7 +86,7 @@ def project_on_line(p, line):
         # closest vertex of line to the point p. Fractional value means that
         # the projected point lies on a segment between two vertices. More than
         # one value can occur if a route follows the same tracks more than once.
-        'positions_on_rails': None,
+        'positions_on_line': None,
         'projected_point': None  # (lon, lat)
     }
 
@@ -99,13 +98,13 @@ def project_on_line(p, line):
     for i, vertex in enumerate(line):
         d = distance(p, vertex)
         if d < d_min:
-            result['positions_on_rails'] = [i]
+            result['positions_on_line'] = [i]
             result['projected_point'] = vertex
             d_min = d
             closest_to_vertex = True
         elif vertex == result['projected_point']:
             # Repeated occurrence of the track vertex in line, like Oslo Line 5
-            result['positions_on_rails'].append(i)
+            result['positions_on_line'].append(i)
     # And then calculate distances to each segment
     for seg in range(len(line)-1):
         # Check bbox for speed
@@ -122,14 +121,14 @@ def project_on_line(p, line):
             )
             d = distance(p, projected_point)
             if d < d_min:
-                result['positions_on_rails'] = [seg + u]
+                result['positions_on_line'] = [seg + u]
                 result['projected_point'] = projected_point
                 d_min = d
                 closest_to_vertex = False
             elif projected_point == result['projected_point']:
                 # Repeated occurrence of the track segment in line, like Oslo Line 5
                 if not closest_to_vertex:
-                    result['positions_on_rails'].append(seg + u)
+                    result['positions_on_line'].append(seg + u)
     return result
 
 
@@ -581,27 +580,21 @@ class Route:
 
     def project_stops_on_line(self):
         projected = [project_on_line(x.stop, self.tracks) for x in self.stops]
+
+        def is_stop_near_tracks(stop_index):
+            return (
+                projected[stop_index]['projected_point'] is not None and
+                distance(
+                   self.stops[stop_index].stop,
+                   projected[stop_index]['projected_point']
+                ) <= MAX_DISTANCE_STOP_TO_LINE
+            )
+
         start = 0
-        while (start < len(self.stops) and
-                (
-                    projected[start]['projected_point'] is None or
-                    distance(
-                       self.stops[start].stop,
-                       projected[start]['projected_point']
-                    ) > MAX_DISTANCE_STOP_TO_LINE
-                )
-        ):
+        while start < len(self.stops) and not is_stop_near_tracks(start):
             start += 1
         end = len(self.stops) - 1
-        while (end > start and
-                (
-                    projected[end]['projected_point'] is None or
-                    distance(
-                        self.stops[end].stop,
-                        projected[end]['projected_point']
-                    ) > MAX_DISTANCE_STOP_TO_LINE
-                )
-        ):
+        while end > start and not is_stop_near_tracks(end):
             end -= 1
         tracks_start = []
         tracks_end = []
@@ -624,7 +617,7 @@ class Route:
                         route_stop.stoparea.name, route_stop.stop, d), self.element)
                 else:
                     route_stop.stop = projected_point
-                route_stop.positions_on_rails = projected[i]['positions_on_rails']
+                route_stop.positions_on_rails = projected[i]['positions_on_line']
                 stops_on_longest_line.append(route_stop)
         if start >= len(self.stops):
             self.tracks = tracks_start
@@ -758,12 +751,11 @@ class Route:
 
             if k not in city.elements:
                 if 'stop' in m['role'] or 'platform' in m['role']:
-                    city.error('{} {} {} for route relation is not in the dataset'.format(
-                        m['role'], m['type'], m['ref']), relation)
                     raise CriticalValidationError(
-                        'Stop or platform {} {} in relation {} '
-                        'is not in the dataset for {}'.format(
-                            m['type'], m['ref'], relation['id'], city.name))
+                        '{} {} {} for route relation {} is not in the dataset'.format(
+                            m['role'], m['type'], m['ref'], relation['id']
+                        )
+                    )
                 continue
             el = city.elements[k]
             if 'tags' not in el:
@@ -821,16 +813,33 @@ class Route:
         return disorder_warnings, disorder_errors
 
     def check_stops_order_on_tracks_direct(self, stop_sequence):
-        """ Checks stops order on tracks, following stop_sequence
-            in direct order only.
-        :param stops_sequence: list of RouteStop that belong to the
+        """Checks stops order on tracks, following stop_sequence
+        in direct order only.
+        :param stop_sequence: list of RouteStop that belong to the
         longest contiguous sequence of tracks in a route.
         :return: error message on the first order violation or None.
         """
+        def make_assertion_error_msg(route_stop, error_type):
+            return (
+                "stop_area {} '{}' has {} 'positions_on_rails' "
+                "attribute in route {}".format(
+                    route_stop.stoparea.id,
+                    route_stop.stoparea.name,
+                    "no" if error_type == 1 else "empty",
+                    self.id
+                )
+            )
+
         allowed_order_violations = 1 if self.is_circular else 0
         max_position_on_rails = -1
         for route_stop in stop_sequence:
+            assert hasattr(route_stop, 'positions_on_rails'), \
+                make_assertion_error_msg(route_stop, error_type=1)
+
             positions_on_rails = route_stop.positions_on_rails
+            assert positions_on_rails, \
+                make_assertion_error_msg(route_stop, error_type=2)
+
             suitable_occurrence = 0
             while (suitable_occurrence < len(positions_on_rails) and
                    positions_on_rails[suitable_occurrence] < max_position_on_rails):
@@ -846,16 +855,16 @@ class Route:
                     )
             max_position_on_rails = positions_on_rails[suitable_occurrence]
 
-    def check_stops_order_on_tracks(self, stops_sequence):
+    def check_stops_order_on_tracks(self, stop_sequence):
         """ Checks stops order on tracks, trying direct and reversed
             order of stops in the stop_sequence.
-        :param stops_sequence: list of RouteStop that belong to the
+        :param stop_sequence: list of RouteStop that belong to the
         longest contiguous sequence of tracks in a route.
         :return: error message on the first order violation or None.
         """
-        error_message = self.check_stops_order_on_tracks_direct(stops_sequence)
+        error_message = self.check_stops_order_on_tracks_direct(stop_sequence)
         if error_message:
-            error_message_reversed = self.check_stops_order_on_tracks_direct(reversed(stops_sequence))
+            error_message_reversed = self.check_stops_order_on_tracks_direct(reversed(stop_sequence))
             if error_message_reversed is None:
                 error_message = None
                 self.city.warn('Tracks seem to go in the opposite direction to stops', self.element)
